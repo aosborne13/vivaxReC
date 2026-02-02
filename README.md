@@ -19,22 +19,27 @@ and temporal signals to generate robust, biologically informed, recurrence class
 Please refer to the original publications and documentation for *Pv3Rs*, *Aster*, and *Dcifer* for full methodological details and citation information.
 
 ## Installation
-Clone GitHub repo in appropriate location on device or HPC (e.g. ~/tools/ folder).
+Step 1: Install micromamba (if you don't already have it).
+```
+curl -L micro.mamba.pm/install.sh | bash
+exec bash  # restart your shell so micromamba is available
+```
+Step 2: Clone GitHub repo in appropriate location on device or HPC (e.g. ~/tools/ folder).
 ```
 git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
-Create conda environment using the ```.yml``` file in the GitHub repo install.
+Step 3: Create conda environment using the ```.yml``` file in the GitHub repo install.
 *Note - is conda is active, first run* ```conda deactivate```
 ```
 mamba env create -f env/environment.yml
 ```
-Activate environment and install remaining R-based software packages (inclides *Pv3Rs*,*asterTES*, and *Dcifer*).
+Step 4: Activate environment and install remaining R-based software packages (inclides *Pv3Rs*,*asterTES*, and *Dcifer*).
 ```
 conda activate vivaxReC
 Rscript env/install_R_packages.R
 ```
-Finally, install vivaxReC CLI and test install.
+Step 4: Finally, install vivaxReC CLI and test install.
 ```
 pip install -e .
 vivaxrec --help
@@ -44,6 +49,12 @@ If installed correctly, you should see:
 usage: vivaxrec [-h] {prepare-input-data,calculate-priors,run-consensus-pipeline,run-aster-dcifer,plot-outputs} ...
 ```
 
+### Updating Installation
+To update, activate the *vivaxReC* enironment and then run the following:
+```
+git pull
+python -m pip install -e .
+```
 ## Input data
 **vivaxReC** was designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**.
 
