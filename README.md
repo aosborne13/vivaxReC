@@ -24,24 +24,17 @@ Step 1: Install micromamba (if you don't already have it).
 curl -L micro.mamba.pm/install.sh | bash
 exec bash  # restart your shell so micromamba is available
 ```
-Step 2: Clone GitHub repo in appropriate location on device or HPC (e.g. ~/tools/ folder).
+Step 2: Clone GitHub repo in appropriate location on device or HPC, such as a tools directory.
 ```
 git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
-Step 3: Create conda environment using the ```.yml``` file in the GitHub repo install.
-*Note - is conda is active, first run* ```conda deactivate```
+Step 3: Create *vivaxReC* envrionment and install all dependencies (e.g. Python, R, *Pv3Rs*, *asterTES*, and *Dcifer*).
 ```
-mamba env create -f env/environment.yml
+bash scripts/setup_env.sh
 ```
-Step 4: Activate environment and install remaining R-based software packages (inclides *Pv3Rs*,*asterTES*, and *Dcifer*).
+Step 4: Test the installation.
 ```
-conda activate vivaxReC
-Rscript env/install_R_packages.R
-```
-Step 4: Finally, install vivaxReC CLI and test install.
-```
-pip install -e .
 vivaxrec --help
 ```
 If installed correctly, you should see:
@@ -52,8 +45,15 @@ usage: vivaxrec [-h] {prepare-input-data,calculate-priors,run-consensus-pipeline
 ### Updating Installation
 To update, activate the *vivaxReC* enironment and then run the following:
 ```
+cd vivaxReC
 git pull
+conda activate vivaxReC
 python -m pip install -e .
+```
+If the environment dependencies have changed:
+```
+conda env update -f env/environment.yml
+Rscript env/install_R_packages.R
 ```
 ## Input data
 **vivaxReC** was designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**.
