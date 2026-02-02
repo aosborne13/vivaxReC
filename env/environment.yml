@@ -1,0 +1,15 @@
+name: vivaxReC
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - pip
+  - pandas
+  - r-base>=4.2
+  - r-readr
+  - r-dplyr
+  - r-stringr
+  - r-tidyr
+  - r-purrr
+  - r-rlang
+  - r-remotes
