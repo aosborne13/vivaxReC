@@ -24,5 +24,7 @@ Please refer to the original publications and documentation for *Pv3Rs*, *Aster*
 - Sequencing assay and panel design methodology - https://www.nature.com/articles/s41467-025-62357-x
 - Bioinformatic processing pipeline -  https://github.com/vivaxgen/MicroHaps
 
+*Note - vivaxReC should work with other forms of multi-allelic sequencing data but accuracy will vary depending on the number of sequencing markers used.*
+
 ### Formatting input data to use vivaxReC pipeline
 
