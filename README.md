@@ -21,7 +21,7 @@ Please refer to the original publications and documentation for *Pv3Rs*, *Aster*
 ## Installation
 Clone GitHub repo in appropriate location on device or HPC (e.g. ~/tools/ folder).
 ```
-git clone https://github.com/YOUR_GITHUB_USERNAME/vivaxReC.git
+git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
 Create conda environment using the ```.yml``` file in the GitHub repo install.
