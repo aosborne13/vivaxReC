@@ -19,8 +19,6 @@ and temporal signals to generate robust, biologically informed, recurrence class
 Please refer to the original publications and documentation for *Pv3Rs*, *Aster*, and *Dcifer* for full methodological details and citation information.
 
 ## Installation
-
-## Installation
 Clone GitHub repo in appropriate location on device or HPC (e.g. ~/tools/ folder).
 ```
 git clone https://github.com/YOUR_GITHUB_USERNAME/vivaxReC.git
