@@ -17,3 +17,12 @@ and temporal signals to generate robust, biologically informed, recurrence class
 **vivaxReC** does not modify or reimplement the underlying algorithms from these tools. All likelihoods, relatedness estimates, and probabilistic classifications are computed using the original software, with **vivaxReC** providing post hoc integration, quality control, and consensus-calling logic.
 
 Please refer to the original publications and documentation for *Pv3Rs*, *Aster*, and *Dcifer* for full methodological details and citation information.
+
+## Input data
+**vivaxReC** was designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**.
+
+- Sequencing assay and panel design methodology - https://www.nature.com/articles/s41467-025-62357-x
+- Bioinformatic processing pipeline -  https://github.com/vivaxgen/MicroHaps
+
+### Formatting input data to use vivaxReC pipeline
+
