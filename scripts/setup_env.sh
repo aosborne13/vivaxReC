@@ -7,30 +7,47 @@ R_INSTALLER="env/install_R_packages.R"
 
 echo "[vivaxReC] Setting up environment: ${ENV_NAME}"
 
-# Pick solver
-if command -v mamba >/dev/null 2>&1; then
-  SOLVER="mamba"
+if command -v micromamba >/dev/null 2>&1; then
+  echo "[vivaxReC] Using micromamba"
+
+  # Enable micromamba activation in non-interactive scripts
+  eval "$(micromamba shell hook -s bash)"
+
+  echo "[vivaxReC] Creating environment from ${YML_FILE} ..."
+  micromamba create -y -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
+
+  echo "[vivaxReC] Activating environment..."
+  micromamba activate "${ENV_NAME}"
+
+elif command -v mamba >/dev/null 2>&1; then
+  echo "[vivaxReC] Using mamba"
+
+  echo "[vivaxReC] Creating environment from ${YML_FILE} ..."
+  mamba env create -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
+
+  echo "[vivaxReC] Activating environment..."
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "${ENV_NAME}"
+
 elif command -v conda >/dev/null 2>&1; then
-  SOLVER="conda"
+  echo "[vivaxReC] Using conda"
+
+  echo "[vivaxReC] Creating environment from ${YML_FILE} ..."
+  conda env create -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
+
+  echo "[vivaxReC] Activating environment..."
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "${ENV_NAME}"
+
 else
-  echo "ERROR: conda or mamba not found. Install Miniconda/Mambaforge/Micromamba first."
+  echo "ERROR: micromamba, mamba, or conda not found."
+  echo "Install micromamba (recommended) or conda/mamba, then retry."
   exit 1
 fi
 
-# Create env (if it already exists, conda/mamba will error; we handle that)
-echo "[vivaxReC] Creating conda environment from ${YML_FILE} ..."
-${SOLVER} env create -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
-
-# Activate env (works for conda/mamba)
-echo "[vivaxReC] Activating environment..."
-source "$(${SOLVER} info --base)/etc/profile.d/conda.sh"
-conda activate "${ENV_NAME}"
-
-# Install R packages (Pv3Rs, asterTES, dcifer)
 echo "[vivaxReC] Installing R packages from GitHub..."
 Rscript "${R_INSTALLER}"
 
-# Install Python CLI (editable)
 echo "[vivaxReC] Installing vivaxrec CLI..."
 python -m pip install -e .
 
@@ -38,3 +55,4 @@ echo
 echo "✅ vivaxReC install complete."
 echo "Test with:"
 echo "  vivaxrec --help"
+
