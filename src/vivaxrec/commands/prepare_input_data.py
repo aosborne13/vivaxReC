@@ -66,7 +66,7 @@ def _normalize_two_cols(cols: list[str]) -> Tuple[str, str]:
     """
     Accept either:
       --coi-cols sample_id coi
-    or (less recommended):
+    or:
       --coi-cols sample_id,coi
     """
     if len(cols) == 1 and "," in cols[0]:
@@ -101,6 +101,9 @@ def run_prepare_input_data_single_dataset(
     """
     Prepare Aster-ready inputs for ONE dataset.
 
+    outdir is treated as an analysis root, and outputs are written to:
+      outdir/<dataset_name>/
+
     Required genotype columns (defaults):
       sample_id, locus, allele
 
@@ -108,14 +111,16 @@ def run_prepare_input_data_single_dataset(
       sample_id, day, time_point
     Optional metadata:
       patient_id (if absent, derived from sample_id split on split_char)
+      site, treatment_arm, etc. (carried through automatically)
 
     Optional COI:
       provide coi_source_file + coi_cols: [sample_col, coi_col]
       If absent, final_coi falls back to a naive lower bound from allele counts per locus.
     """
     dataset_name = str(dataset_name)
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
+    analysis_root = Path(outdir)
+    dataset_dir = analysis_root / dataset_name.lower()
+    dataset_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- load genotypes ----
     g_raw = safe_read(genotypes_file)
@@ -126,7 +131,7 @@ def run_prepare_input_data_single_dataset(
     g_raw = g_raw.rename(
         columns={sample_id_col: "sample_id", locus_col: "locus", allele_col: "allele"}
     )
-    geno = collapse_to_sets(g_raw).assign(dataset=dataset_name)  # sample_id,locus,alleles_set,dataset
+    geno = collapse_to_sets(g_raw).assign(dataset=dataset_name.lower())
 
     # ---- load metadata ----
     meta = safe_read(metadata_file)
@@ -138,14 +143,15 @@ def run_prepare_input_data_single_dataset(
                 f"--metadata-dataset-col '{metadata_dataset_col}' not found in metadata. "
                 f"Columns: {list(meta.columns)}"
             )
-        meta = meta.loc[meta[metadata_dataset_col].astype(str).str.lower() == dataset_name.lower()].copy()
+        meta = meta.loc[
+            meta[metadata_dataset_col].astype(str).str.lower() == dataset_name.lower()
+        ].copy()
 
     # Ensure required metadata columns exist
     for c in [sample_id_col, day_col, time_point_col]:
         if c not in meta.columns:
             raise RuntimeError(f"Metadata missing column '{c}'. Present: {list(meta.columns)}")
 
-    # Standardize names used downstream
     meta = meta.rename(
         columns={
             sample_id_col: "sample_id",
@@ -186,6 +192,7 @@ def run_prepare_input_data_single_dataset(
         coi_tbl["coi_source"] = Path(coi_source_file).name
 
     # ---- master samples ----
+    # Start from samples that actually have genotypes, then bring in all metadata columns available
     samples = (
         geno[["dataset", "sample_id"]]
         .drop_duplicates()
@@ -200,24 +207,21 @@ def run_prepare_input_data_single_dataset(
         .rename(columns={"alleles_set": "coi_naive_lb"})
     )
 
-    samples = samples.merge(coi_lb, on=["dataset", "sample_id"], how="left").merge(
-        coi_tbl, on="sample_id", how="left"
+    samples = (
+        samples.merge(coi_lb, on=["dataset", "sample_id"], how="left")
+        .merge(coi_tbl, on="sample_id", how="left")
     )
 
     samples["final_coi"] = samples["coi_estimate"].fillna(samples["coi_naive_lb"])
     samples["coi_source"] = samples["coi_source"].fillna("naive_lower_bound")
 
-    # ---- per-sample × locus with metadata ----
-    per_sample_locus = geno.merge(
-        samples[["dataset", "sample_id", "patient_id", "day", "time_point", "final_coi", "coi_source"]],
-        on=["dataset", "sample_id"],
-        how="left",
-    )
+    # ---- per-sample × locus with ALL sample metadata carried through ----
+    # This keeps site/treatment_arm/etc for downstream scripts.
+    per_sample_locus = geno.merge(samples, on=["dataset", "sample_id"], how="left")
 
     # ---- D0 → DR pairs per patient ----
     pairs = []
     for patient, sub in per_sample_locus.groupby(["patient_id"], dropna=False):
-        # order by day then time_point index then sample_id
         sids = (
             sub[["sample_id", "day", "time_point"]]
             .drop_duplicates(subset=["sample_id"])
@@ -232,7 +236,7 @@ def run_prepare_input_data_single_dataset(
         for _, r in later.iterrows():
             pairs.append(
                 {
-                    "dataset": dataset_name,
+                    "dataset": dataset_name.lower(),
                     "patient_id": patient,
                     "d0_sample_id": d0_sid,
                     "dr_sample_id": r["sample_id"],
@@ -243,7 +247,6 @@ def run_prepare_input_data_single_dataset(
     pairs_df = pd.DataFrame(pairs)
 
     # ---- allele frequencies (π) from D0 only ----
-    # Identify D0 sample per patient
     d0_rows = []
     for patient, sub in per_sample_locus.groupby(["patient_id"], dropna=False):
         sids = (
@@ -266,11 +269,11 @@ def run_prepare_input_data_single_dataset(
         counts: Counter[str] = Counter()
         for s in sub["alleles_set"].astype(str):
             alleles = [a for a in s.split("|") if a]
-            counts.update(set(alleles))  # presence per sample
+            counts.update(set(alleles))
         for a, cnt in counts.items():
             pi_rows.append(
                 {
-                    "dataset": dataset_name,
+                    "dataset": dataset_name.lower(),
                     "locus": locus,
                     "allele": a,
                     "freq": cnt / n if n else 0.0,
@@ -280,10 +283,10 @@ def run_prepare_input_data_single_dataset(
 
     pi_df = pd.DataFrame(pi_rows).sort_values(["dataset", "locus", "allele"])
 
-    # ---- write outputs ----
-    samples.to_csv(outdir / "master_samples.tsv", sep="\t", index=False)
-    per_sample_locus.to_csv(outdir / "per_sample_locus_alleles.tsv", sep="\t", index=False)
-    pairs_df.to_csv(outdir / "d0_dr_pairs.tsv", sep="\t", index=False)
-    pi_df.to_csv(outdir / "allele_freq_from_D0.tsv", sep="\t", index=False)
+    # ---- write outputs (match your old filenames) ----
+    samples.to_csv(dataset_dir / "master_samples.tsv", sep="\t", index=False)
+    per_sample_locus.to_csv(dataset_dir / "per_sample_locus_alleles.tsv", sep="\t", index=False)
+    pairs_df.to_csv(dataset_dir / "d0_dr_pairs.tsv", sep="\t", index=False)
+    pi_df.to_csv(dataset_dir / "allele_freq_from_D0.tsv", sep="\t", index=False)
 
-    print(f"✓ Wrote Aster-ready TSVs in {outdir.resolve()}")
+    print(f"✓ Wrote Aster-ready TSVs in {dataset_dir.resolve()}")
