@@ -51,7 +51,7 @@ git pull
 micromamba activate vivaxReC
 python -m pip install -e .
 ```
-If the environment dependencies have changed:
+If only environment dependencies have changed:
 ```
 micromamba activate vivaxReC
 micromamba update -f env/environment.yml
