@@ -30,6 +30,7 @@ git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
 Step 3: Create *vivaxReC* envrionment and install all dependencies (e.g. Python, R, *Pv3Rs*, *asterTES*, and *Dcifer*).
+*Note - if conda is also installed on your device, run ```conda deactivate``` before proceeding with this next step*
 ```
 bash scripts/setup_env.sh
 ```
