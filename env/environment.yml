@@ -13,3 +13,6 @@ dependencies:
   - r-purrr
   - r-rlang
   - r-remotes
+  - r-igraph
+  - r-partitions
+  - r-gmp
