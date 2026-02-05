@@ -19,24 +19,22 @@ and temporal signals to generate robust, biologically informed, recurrence class
 Please refer to the original publications and documentation for *Pv3Rs*, *Aster*, and *Dcifer* for full methodological details and citation information.
 
 ## Installation
-Step 1: Install micromamba (if you don't already have it).
+### Step 1: Install micromamba (if you don't already have it).
 ```
 curl -L micro.mamba.pm/install.sh | bash
 exec bash  # restart your shell so micromamba is available
 ```
-Step 2: Clone GitHub repo in appropriate location on device or HPC, such as a tools directory.
+### Step 2: Clone GitHub repo in appropriate location on device or HPC, such as a tools directory.
 ```
 git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
-Step 3: Create *vivaxReC* envrionment and install all dependencies (e.g. Python, R, *Pv3Rs*, *asterTES*, and *Dcifer*).
-
-
+### Step 3: Create *vivaxReC* envrionment and install all dependencies (e.g. Python, R, *Pv3Rs*, *asterTES*, and *Dcifer*).
 *Note - if conda is also installed on your device, run ```conda deactivate``` before proceeding with this next step*
 ```
 bash scripts/setup_env.sh
 ```
-Step 4: Test the installation.
+### Step 4: Test the installation.
 ```
 vivaxrec --help
 ```
@@ -45,7 +43,7 @@ If installed correctly, you should see:
 usage: vivaxrec [-h] {prepare-input-data,calculate-priors,run-consensus-pipeline,run-aster-dcifer,plot-outputs} ...
 ```
 
-### Updating Installation
+### Updating
 To update, activate the *vivaxReC* enironment and then run the following:
 ```
 cd vivaxReC
