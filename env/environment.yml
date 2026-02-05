@@ -2,9 +2,10 @@ name: vivaxReC
 channels:
   - conda-forge
 dependencies:
-  - python>=3.9
+  - python=3.11
   - pip
   - pandas
+
   - r-base>=4.2
   - r-readr
   - r-dplyr
@@ -13,6 +14,8 @@ dependencies:
   - r-purrr
   - r-rlang
   - r-remotes
+
+  # Pv3Rs dependencies (install via conda-forge to avoid source compilation)
   - r-igraph
   - r-partitions
   - r-gmp
