@@ -48,12 +48,13 @@ To update, activate the *vivaxReC* enironment and then run the following:
 ```
 cd vivaxReC
 git pull
-conda activate vivaxReC
+micromamba activate vivaxReC
 python -m pip install -e .
 ```
 If the environment dependencies have changed:
 ```
-conda env update -f env/environment.yml
+micromamba activate vivaxReC
+micromamba update -f env/environment.yml
 Rscript env/install_R_packages.R
 ```
 ## Input data
