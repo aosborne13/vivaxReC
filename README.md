@@ -1,7 +1,7 @@
 # vivaxReC
 
 ## What is vivaxReC ?
-**vivaxReC** (**v**ivax **R**ecurrence **C**onsensus) is a consensus framework for classifying *Plasmodium vivax* recurrent infections by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs* and *Aster*), allele-sharing, relatedness estimates (including *Dcifer* and *Aster*-derived background relatedness), and time-to-event information.
+**vivaxReC** (**v**ivax **R**ecurrence **C**onsensus) is a consensus framework for processing MicroHaplotype data to use towards classifying *Plasmodium vivax* recurrent infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs* and *Aster*), allele-sharing, relatedness estimates (including *Dcifer* and *Aster*-derived background relatedness).
 
 **vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reimplement existing methods. Instead, it acts as an adjudication and evidence-integration layer, synthesizing complementary probabilistic, genetic,
 and temporal signals to generate robust, biologically informed, recurrence classifications, while explicitly retaining uncertainty in ambiguous cases. All primary methodological credit remains with the original tool authors.
