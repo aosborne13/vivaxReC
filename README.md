@@ -239,8 +239,8 @@ Repeat for each trial in your dataset.
 | `max_recrud_days` | `45` | Interval threshold for post-hoc C→L/I reassignment |
 | `af_model` | `mix` | Allele frequency model: `d0`, `pair`, or `mix` |
 | `window_days` | `35 120` | Time window boundaries (days) |
-| `pC` | `0.08 0.01 0.005` | Per-window recrudescence prior |
-| `pL` | `0.25 0.70 0.40` | Per-window relapse prior (non-PQ arms) |
+| `pC` | `0.08`, `0.01`, `0.005` | Per-window recrudescence prior |
+| `pL` | `0.25`, `0.70`, `0.40` | Per-window relapse prior (non-PQ arms) |
 | `lambda_foi_w` | `0.002` | Daily reinfection rate (force of infection) |
 | `pq_discount` | `0.19` | Relapse prior multiplier for PQ arms in windows 2–3 |
 | `pq_arms` | *(none)* | Space-separated treatment arm names to receive PQ discount (e.g. `pq_arms "7-day" "14-day"`) |
