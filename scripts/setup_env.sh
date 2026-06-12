@@ -19,40 +19,30 @@ if command -v micromamba >/dev/null 2>&1; then
   echo "[vivaxReC] Activating environment..."
   micromamba activate "${ENV_NAME}"
 
-elif command -v mamba >/dev/null 2>&1; then
-  echo "[vivaxReC] Using mamba"
+  echo "[vivaxReC] Installing R packages..."
+  Rscript "${R_INSTALLER}"
 
-  echo "[vivaxReC] Creating environment from ${YML_FILE} ..."
-  mamba env create -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
+  echo "[vivaxReC] Installing vivaxrec Python package..."
+  pip install -e .
 
-  echo "[vivaxReC] Activating environment..."
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "${ENV_NAME}"
+  echo "[vivaxReC] Setup complete. Run: micromamba activate ${ENV_NAME}"
 
 elif command -v conda >/dev/null 2>&1; then
   echo "[vivaxReC] Using conda"
-
-  echo "[vivaxReC] Creating environment from ${YML_FILE} ..."
-  conda env create -f "${YML_FILE}" || echo "[vivaxReC] Environment may already exist; continuing."
-
-  echo "[vivaxReC] Activating environment..."
+  conda env create -f "${YML_FILE}" || conda env update -f "${YML_FILE}"
   source "$(conda info --base)/etc/profile.d/conda.sh"
   conda activate "${ENV_NAME}"
 
+  echo "[vivaxReC] Installing R packages..."
+  Rscript "${R_INSTALLER}"
+
+  echo "[vivaxReC] Installing vivaxrec Python package..."
+  pip install -e .
+
+  echo "[vivaxReC] Setup complete. Run: conda activate ${ENV_NAME}"
+
 else
-  echo "ERROR: micromamba, mamba, or conda not found."
-  echo "Install micromamba (recommended) or conda/mamba, then retry."
+  echo "[vivaxReC] ERROR: Neither micromamba nor conda found."
+  echo "           Install micromamba: curl -L micro.mamba.pm/install.sh | bash"
   exit 1
 fi
-
-echo "[vivaxReC] Installing R packages from GitHub..."
-Rscript "${R_INSTALLER}"
-
-echo "[vivaxReC] Installing vivaxrec CLI..."
-python -m pip install -e .
-
-echo
-echo "✅ vivaxReC install complete."
-echo "Test with:"
-echo "  vivaxrec --help"
-
