@@ -1,22 +1,23 @@
 # vivaxReC
 
 ## What is vivaxReC ?
-**vivaxReC** (**v**ivax **R**ecurrence **C**onsensus) is a consensus framework for processing MicroHaplotype data to use towards classifying *Plasmodium vivax* recurrent infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs* and *Aster*), allele-sharing, relatedness estimates (including *Dcifer* and *Aster*-derived background relatedness).
+**vivaxReC** (**v**ivax **R**ecurrence **C**onsensus) is a consensus framework for processing MicroHaplotype data (genotyping data following protocols and design workflows created by **VivaxGEN**) to use towards classifying *Plasmodium vivax* recurrent infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs*, with *Aster* being added at a later date), allele-sharing, relatedness estimates (including *Dcifer* and background relatedness).
 
-**vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reimplement existing methods. Instead, it acts as an adjudication and evidence-integration layer, synthesizing complementary probabilistic, genetic,
-and temporal signals to generate robust, biologically informed, recurrence classifications, while explicitly retaining uncertainty in ambiguous cases. All primary methodological credit remains with the original tool authors.
+**vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reinvent existing methods. All primary methodological credit remains with the original tool authors.
 
 ## Methods and attribution
 
-**vivaxReC** integrates outputs from several existing recurrence and relatedness inference tools. Users of this repository should cite the original methods accordingly:
+**vivaxReC** integrates outputs from several existing analysis tools. Users of this repository should cite the original methods accordingly:
 
 - **Pv3Rs** – probabilistic classification of recrudescence, relapse, and reinfection using within-host genotype series. Available at: https://github.com/aimeertaylor/Pv3Rs
-- **Aster** – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness. Available at: https://github.com/EPPIcenter/asterTES
 - **Dcifer** – identity-by-descent–based relatedness estimation across loci. Available at: https://github.com/EPPIcenter/dcifer
+
+Coming soon:
+- **Aster** – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness. Available at: https://github.com/EPPIcenter/asterTES
 
 **vivaxReC** does not modify or reimplement the underlying algorithms from these tools. All likelihoods, relatedness estimates, and probabilistic classifications are computed using the original software, with **vivaxReC** providing post hoc integration, quality control, and consensus-calling logic.
 
-Please refer to the original publications and documentation for *Pv3Rs*, *Aster*, and *Dcifer* for full methodological details and citation information.
+Please refer to the original publications and documentation for for full methodological details and citation information.
 
 ## Installation
 ### Step 1: Install micromamba (if you don't already have it).
@@ -29,7 +30,7 @@ exec bash  # restart your shell so micromamba is available
 git clone https://github.com/aosborne13/vivaxReC
 cd vivaxReC
 ```
-### Step 3: Create *vivaxReC* envrionment and install all dependencies (e.g. Python, R, *Pv3Rs*, *asterTES*, and *Dcifer*).
+### Step 3: Create *vivaxReC* envrionment and install all dependencies.
 *Note - if conda is also installed on your device, run* ```conda deactivate``` *before proceeding with this next step*
 ```
 bash scripts/setup_env.sh
