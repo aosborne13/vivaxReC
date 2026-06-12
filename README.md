@@ -337,19 +337,3 @@ The pipeline uses a biologically-informed three-window time prior. Defaults are 
 Window boundaries and prior values are all configurable via CLI flags. If primaquine (PQ) treatment arms are present, the relapse prior in Windows 2 and 3 is discounted by `pq_discount` (default 0.19, reflecting ~5-fold reduction in relapse from published trial data). Adjust this multiplier to match the efficacy observed in your study.
 
 The `lambda_foi_w = 0.002/day` default reinfection rate is conservative; relapse proportions derived under this prior should be treated as lower bounds in high-transmission settings.
-
----
-
-## Citing this work
-
-If you use vivaxReC in your research, please cite:
-
-- **Pv3Rs:** Taylor *et al.* (in preparation)
-- **DCiFER:** [dcifer GitHub](https://github.com/EPPIcenter/dcifer)
-- **MOIRE:** [moire GitHub](https://github.com/EPPIcenter/moire)
-
----
-
-## About
-
-Developed at Menzies School of Health Research. Contributions from VivaxGEN
