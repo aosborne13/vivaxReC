@@ -19,6 +19,31 @@ Coming soon:
 
 Please refer to the original publications and documentation for for full methodological details and citation information.
 
+
+## Pipeline overview - ADDING MORE QC AND DOWNSTREAM ANALYSES
+
+```
+patient_infection_sequence.tsv  ──┐
+mhap_filtered.tsv               ──┤  Step 1: vivaxrec prep
+                                   ↓
+                        master_samples.tsv
+                        per_sample_locus_alleles.tsv
+                        d0_dr_pairs.tsv
+                        allele_freq_from_D0.tsv
+                                   ↓
+baseline_pairs_with_relatedness.tsv  ──┐
+consecutive_pairs_with_relatedness.tsv ┤  Step 2: vivaxrec classify
+                                       ↓
+                  per_infection_classifications.tsv  (baseline)
+                  per_infection_classifications.tsv  (consecutive)
+                                   ↓
+                               Step 3: vivaxrec plot
+                                   ↓
+                          figures/  (PNG outputs)
+```
+
+
+
 ## Installation
 ### Step 1: Install micromamba (if you don't already have it).
 ```
@@ -65,6 +90,3 @@ Rscript env/install_R_packages.R
 - Bioinformatic processing pipeline -  https://github.com/vivaxgen/MicroHaps
 
 *Note - vivaxReC should work with other forms of multi-allelic sequencing data but accuracy will vary depending on the number of sequencing markers used.*
-
-### Formatting input data to use vivaxReC pipeline
-
