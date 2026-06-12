@@ -109,8 +109,8 @@ Rscript env/install_R_packages.R
 ## Input data
 **vivaxReC** was designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**.
 
-- Sequencing assay and panel design methodology - https://www.nature.com/articles/s41467-025-62357-x
-- Bioinformatic processing pipeline -  https://github.com/vivaxgen/MicroHaps
+- Sequencing assay and panel design methodology - [Microhaplotype Sequencing Manuscript](https://www.nature.com/articles/s41467-025-62357-x) + [Laboratory Protocols](https://www.protocols.io/private/B941F93F1F7D11F0BADE0A58A9FEAC02)
+- Bioinformatic processing pipeline - [VivaxGEN GitHub](https://github.com/vivaxgen/MicroHaps)
 
 *Note - vivaxReC should work with other forms of multi-allelic sequencing data but accuracy will vary depending on the number of sequencing markers used. **Do not use WGS data**.*
 
