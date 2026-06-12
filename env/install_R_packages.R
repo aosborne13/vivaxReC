@@ -1,10 +1,25 @@
-options(repos = c(CRAN = "https://cloud.r-project.org"))
+#!/usr/bin/env Rscript
+# =============================================================================
+# install_R_packages.R
+# Installs all R dependencies required by the vivaxReC pipeline.
+# Called automatically by setup_env.sh.
+# =============================================================================
+message("[vivaxReC] Installing CRAN packages...")
+cran_pkgs <- c(
+  "readr", "dplyr", "stringr", "tidyr", "purrr", "rlang",
+  "ggplot2", "patchwork", "scales", "forcats", "ggrepel",
+  "tibble", "remotes"
+)
+install.packages(cran_pkgs, repos = "https://cloud.r-project.org", quiet = TRUE)
 
-if (!requireNamespace("remotes", quietly = TRUE)) {
-  install.packages("remotes")
-}
+message("[vivaxReC] Installing Bioconductor packages...")
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager", repos = "https://cloud.r-project.org")
 
-# We manage dependencies via conda (env/environment.yml), so avoid source builds here
-remotes::install_github("EPPIcenter/asterTES", dependencies = FALSE)
-remotes::install_github("EPPIcenter/dcifer",  dependencies = FALSE)
-remotes::install_github("aimeertaylor/Pv3Rs", dependencies = FALSE)
+message("[vivaxReC] Installing dcifer from CRAN...")
+install.packages("dcifer", repos = "https://cloud.r-project.org", quiet = TRUE)
+
+message("[vivaxReC] Installing Pv3Rs from GitHub...")
+remotes::install_github("aimeertaylor/Pv3Rs", quiet = TRUE)
+
+message("[vivaxReC] R package installation complete.")
