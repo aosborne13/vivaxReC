@@ -11,6 +11,7 @@
 
 - **Pv3Rs** – probabilistic classification of recrudescence, relapse, and reinfection using within-host genotype series. Available at: https://github.com/aimeertaylor/Pv3Rs
 - **Dcifer** – identity-by-descent–based relatedness estimation across loci. Available at: https://github.com/EPPIcenter/dcifer
+- **MOIRE** – an MCMC based approach to estimating complexity of infection (COI), also sometimes referred to as multiplicity of infection (MOI), population allele frequencies, and within-host relatedness from polyallelic genomics data. Available at: https://github.com/EPPIcenter/moire
 
 Coming soon:
 - **Aster** – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness. Available at: https://github.com/EPPIcenter/asterTES
@@ -133,14 +134,14 @@ One row per sample. Required columns:
 ### Output from VivaxGEN pipeline
 
 ```
-					outputCIGAR.tsv
-					↓ (prepare_data.r --infile outputCIGAR.tsv --rmindel --outdir analysis-filtered-no-indel)
-					mhap_filtered.tsv
-		↓							↓
-		MOIRE							Dcifer
-	run_Moire.r --infile mhap_filtered.tsv --outdir moire		run_Dcifer.r --infile mhap_filtered.tsv --outdir dcifer
-	↓								↓
-	mhap_effective_COI_summary.tsv					mhap_between_relatedness_estimate.tsv
+outputCIGAR.tsv
+		↓ (prepare_data.r --infile outputCIGAR.tsv --rmindel --outdir analysis-filtered-no-indel)
+	mhap_filtered.tsv
+	↓				↓
+MOIRE				Dcifer
+(run_Moire.r)			(run_Dcifer.r)
+↓									↓
+mhap_effective_COI_summary.tsv		mhap_between_relatedness_estimate.tsv
 ```
 
 #### `mhap_effective_COI_summary.tsv`
@@ -345,6 +346,7 @@ If you use vivaxReC in your research, please cite:
 
 - **Pv3Rs:** Taylor *et al.* (in preparation)
 - **DCiFER:** [dcifer GitHub](https://github.com/EPPIcenter/dcifer)
+- **MOIRE:** [moire GitHub](https://github.com/EPPIcenter/moire)
 
 ---
 
