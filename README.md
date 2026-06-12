@@ -29,12 +29,12 @@ Please refer to the original publications and documentation for for full methodo
   mhap_between_relatedness_estimate.tsv ┘
                                         ↓
                            standardized_inputs/
-                             analysis_ready/
-                               metadata.cleaned.tsv
-                               coi.cleaned.tsv
-                               relatedness.cleaned.tsv
-                             dropped/   (samples not in metadata)
-                             qc/        (duplicate IDs, missing dates, etc.)
+                             	analysis_ready/
+                               		metadata.cleaned.tsv
+                               		coi.cleaned.tsv
+                               		relatedness.cleaned.tsv
+                             	dropped/   (samples not in metadata)
+                             	qc/        (duplicate IDs, missing dates, etc.)
                                         ↓
                                    Step 2: vivaxrec build
                                         ↓
@@ -56,10 +56,10 @@ Please refer to the original publications and documentation for for full methodo
                                    Step 4: vivaxrec classify
                                         ↓
                            recurrence-classification/<trial>/
-                             baseline-to-recurrence/
-                               per_infection_classifications.tsv
-                             consecutive-pairs/
-                               per_infection_classifications.tsv
+                             	baseline-to-recurrence/
+                              		 per_infection_classifications.tsv
+                             	consecutive-pairs/
+                               		per_infection_classifications.tsv
                                         ↓
                                    Step 5: vivaxrec plot
                                         ↓
