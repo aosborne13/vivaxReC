@@ -9,12 +9,12 @@
 
 **vivaxReC** integrates outputs from several existing analysis tools. Users of this repository should cite the original methods accordingly:
 
-- **Pv3Rs** – probabilistic classification of recrudescence, relapse, and reinfection using within-host genotype series. Available at: https://github.com/aimeertaylor/Pv3Rs
-- **Dcifer** – identity-by-descent–based relatedness estimation across loci. Available at: https://github.com/EPPIcenter/dcifer
-- **MOIRE** – an MCMC based approach to estimating complexity of infection (COI), also sometimes referred to as multiplicity of infection (MOI), population allele frequencies, and within-host relatedness from polyallelic genomics data. Available at: https://github.com/EPPIcenter/moire
+- **Pv3Rs:** [Pv3Rs GitHub](https://github.com/aimeertaylor/Pv3Rs) – probabilistic classification of recrudescence, relapse, and reinfection using within-host genotype series.
+- **DCiFER:** [dcifer GitHub](https://github.com/EPPIcenter/dcifer) – identity-by-descent–based relatedness estimation across loci.
+- **MOIRE:** [moire GitHub](https://github.com/EPPIcenter/moire) – an MCMC based approach to estimating complexity of infection (COI), also sometimes referred to as multiplicity of infection (MOI), population allele frequencies, and within-host relatedness from polyallelic genomics data.
 
 Coming soon:
-- **Aster** – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness. Available at: https://github.com/EPPIcenter/asterTES
+- **Aster** [asterTES GitHub](https://github.com/EPPIcenter/asterTES)  – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness.
 
 **vivaxReC** does not modify or reimplement the underlying algorithms from these tools. All likelihoods, relatedness estimates, and probabilistic classifications are computed using the original software, with **vivaxReC** providing post hoc integration, quality control, and consensus-calling logic.
 
