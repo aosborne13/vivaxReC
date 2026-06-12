@@ -330,9 +330,9 @@ The pipeline uses a biologically-informed three-window time prior. Defaults are 
 
 | Window | Days | Description |
 |--------|------|-------------|
-| W1 | ≤ 35 | Recrudescence possible; short-latency relapse possible |
-| W2 | 36–120 | Recrudescence very unlikely; primary relapse window |
-| W3 | > 120 | Recrudescence implausible; reinfection accumulates |
+| 1 | ≤ 35 | Recrudescence possible; short-latency relapse possible |
+| 2 | 36–120 | Recrudescence very unlikely; primary relapse window |
+| 3 | > 120 | Recrudescence implausible; reinfection accumulates |
 
 Window boundaries and prior values are all configurable via CLI flags. If primaquine (PQ) treatment arms are present, the relapse prior in Windows 2 and 3 is discounted by `pq_discount` (default 0.19, reflecting ~5-fold reduction in relapse from published trial data). Adjust this multiplier to match the efficacy observed in your study.
 
