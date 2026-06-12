@@ -243,7 +243,7 @@ Repeat for each trial in your dataset.
 | `pL` | `0.25`, `0.70`, `0.40` | Per-window relapse prior (non-PQ arms) |
 | `lambda_foi_w` | `0.002` | Daily reinfection rate (force of infection) |
 | `pq_discount` | `0.19` | Relapse prior multiplier for PQ arms in windows 2–3 |
-| `pq_arms` | *(none)* | Space-separated treatment arm names to receive PQ discount (e.g. `pq_arms "7-day" "14-day"`) |
+| `pq_arms` | *(none)* | Treatment arm names to receive PQ discount (e.g. ` "7-day"`, `"14-day"`, `ALPQ`, `CQPQ`) |
 | `first_rec_only` | `off` | `on` to additionally re-run Pv3Rs restricted to D0 + first recurrence per patient |
 | `mono_only` | `off` | `on` to additionally re-run Pv3Rs restricted to patients with monoclonal D0 (raw eMOI ≤ threshold) |
 | `mono_emoi_th` | `1.0` | eMOI threshold for monoclonal D0 definition (raw `post_effective_coi_mean`, not rounded) |
