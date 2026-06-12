@@ -66,7 +66,7 @@ vivaxrec --help
 ```
 If installed correctly, you should see:
 ```
-usage: vivaxrec [-h] {prepare-input-data,calculate-priors,run-consensus-pipeline,run-aster-dcifer,plot-outputs} ...
+usage: vivaxrec [-h] {vivaxrec prep,vivaxrec classify,vivaxrec plot,vivaxrec run-all} ...
 ```
 
 ### Updating
