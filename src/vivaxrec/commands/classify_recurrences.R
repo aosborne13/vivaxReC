@@ -413,11 +413,32 @@ calc_afreq <- function(sub_dsmp, sub_coi, sub_is_d0) {
 is_d0 <- dfsmp$day == 0
 if (!any(is_d0)) stop("No D0 samples found for ", TRIAL_UP, ".")
 
-af_full   <- calc_afreq(dsmp, coi, is_d0)
+af_full    <- calc_afreq(dsmp, coi, is_d0)
 afreq_base <- af_full$afreq
 eps_floor  <- af_full$eps_floor
 n_d0       <- sum(is_d0)
 message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
+
+# ── Allele frequencies from monoclonal D0 samples — used for mono_only run ────
+# Computed upfront so it is ready before any Pv3Rs run starts.
+# Uses D0 samples with raw eMOI <= mono_emoi_th only.
+if (mono_only == "on") {
+  d0_emoi_all <- get_emoi(dfsmp$smp_id[is_d0], fallback = NA_real_)
+  is_d0_mono  <- is_d0
+  is_d0_mono[is_d0] <- !is.na(d0_emoi_all) & d0_emoi_all <= mono_emoi_th
+  n_d0_mono   <- sum(is_d0_mono)
+  if (n_d0_mono == 0) {
+    warning("No monoclonal D0 samples found (eMOI <= ", mono_emoi_th,
+            ") — mono_only run will use full afreq_base")
+    af_mono <- af_full
+  } else {
+    af_mono <- calc_afreq(dsmp, coi, is_d0_mono)
+    message(sprintf(">> allele frequencies estimated from %d monoclonal D0 samples (eMOI <= %.2f)",
+                    n_d0_mono, mono_emoi_th))
+  }
+} else {
+  af_mono <- NULL  # not needed
+}
 
 # ── r_bg: trial-specific D0 pairwise dcifer IBD ───────────────────────────────
 # Always computed from the current trial's own D0 samples only (no cross-trial mixing).
@@ -931,22 +952,11 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
   # Determine which allele frequencies to use for this run.
-  # For mono_only: recompute from monoclonal D0 samples only.
-  # For all other runs: use the full-dataset afreq_base.
-  if (table_type == "mono") {
-    sub_is_d0 <- sub_dfsmp$day == 0
-    message(sprintf(">> [%s] D0 samples in mono subset: %d of %d",
-                    label, sum(sub_is_d0, na.rm = TRUE), nrow(sub_dfsmp)))
-    if (any(sub_is_d0, na.rm = TRUE)) {
-      af_run    <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
-      message(sprintf(">> [%s] allele frequencies computed from %d monoclonal D0 samples (eMOI <= %.2f)",
-                      label, sum(sub_is_d0, na.rm = TRUE), mono_emoi_th))
-    } else {
-      af_run <- list(afreq = afreq_base, eps_floor = eps_floor)
-      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — using full afreq_base", label))
-    }
+  # af_full and af_mono are both computed upfront at the top of the script.
+  if (table_type == "mono" && !is.null(af_mono)) {
+    af_run <- af_mono
   } else {
-    af_run <- list(afreq = afreq_base, eps_floor = eps_floor)
+    af_run <- af_full
   }
 
   if (pv3rs_flag == "on") {
