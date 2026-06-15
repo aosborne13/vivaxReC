@@ -24,67 +24,41 @@ import sys
 import subprocess
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent / "commands"
+COMMANDS_DIR = Path(__file__).parent.parent / "commands"
 
 R_CMD  = "Rscript"
 PY_CMD = sys.executable
 
 
-def _run(cmd, **kwargs):
+def _run(cmd):
     print(f"[vivaxrec] Running: {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(cmd, **kwargs)
+    result = subprocess.run(cmd)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
 
-def _get_extra(args):
-    """Strip a leading '--' separator if present — users shouldn't need to type it."""
-    extra = args.extra or []
-    if extra and extra[0] == "--":
-        extra = extra[1:]
-    return extra
+def cmd_standardize(extra):
+    _run([PY_CMD, str(COMMANDS_DIR / "standardize_inputs.py")] + extra)
 
 
-def cmd_standardize(args):
-    script = SCRIPTS_DIR / "standardize_inputs.py"
-    _run([PY_CMD, str(script)] + _get_extra(args))
+def cmd_build(extra):
+    _run([PY_CMD, str(COMMANDS_DIR / "build_patient_level_tables.py")] + extra)
 
 
-def cmd_build(args):
-    script = SCRIPTS_DIR / "build_patient_level_tables.py"
-    _run([PY_CMD, str(script)] + _get_extra(args))
+def cmd_prep(extra):
+    _run([PY_CMD, str(COMMANDS_DIR / "prep_pv3rs_inputs.py")] + extra)
 
 
-def cmd_prep(args):
-    script = SCRIPTS_DIR / "prep_pv3rs_inputs.py"
-    _run([PY_CMD, str(script)] + _get_extra(args))
+def cmd_classify(extra):
+    _run([R_CMD, str(COMMANDS_DIR / "classify_recurrences.R")] + extra)
 
 
-def cmd_classify(args):
-    script = SCRIPTS_DIR / "classify_recurrences.R"
-    _run([R_CMD, str(script)] + _get_extra(args))
+def cmd_plot(extra):
+    _run([R_CMD, str(COMMANDS_DIR / "plot_recurrence_classifications.R")] + extra)
 
 
-def cmd_plot(args):
-    script = SCRIPTS_DIR / "plot_recurrence_classifications.R"
-    _run([R_CMD, str(script)] + _get_extra(args))
-
-
-def cmd_run_all(args):
-    """Run the full pipeline end to end (steps 1–5).
-
-    --trials is required: pass one or more trial names matching the trial
-    column in patient_infection_sequence.tsv.
-
-    Example:
-      vivaxrec run-all -- --trials mytrial --meta /data/metadata.tsv \\
-        --rel   /data/mhap_between_relatedness_estimate.tsv \\
-        --coi   /data/mhap_effective_COI_summary.tsv \\
-        --out_dir /data/output
-    """
-    extra = _get_extra(args)
-
-    # Extract --trials values; remaining args are passed to each step
+def cmd_run_all(extra):
+    # Extract --trials; remaining flags forwarded to each step
     trials = []
     remaining = []
     i = 0
@@ -100,30 +74,168 @@ def cmd_run_all(args):
 
     if not trials:
         print("[vivaxrec] ERROR: --trials is required for run-all.")
-        print("  Example: vivaxrec run-all -- --trials mytrial --meta /data/metadata.tsv")
+        print("  Example: vivaxrec run-all --trials mytrial --meta /data/metadata.tsv")
         sys.exit(1)
 
     print(f"\n[vivaxrec] === Step 1/5: standardize ===")
-    _run([PY_CMD, str(SCRIPTS_DIR / "standardize_inputs.py")] + remaining)
+    _run([PY_CMD, str(COMMANDS_DIR / "standardize_inputs.py")] + remaining)
 
     print(f"\n[vivaxrec] === Step 2/5: build ===")
-    _run([PY_CMD, str(SCRIPTS_DIR / "build_patient_level_tables.py")] + remaining)
+    _run([PY_CMD, str(COMMANDS_DIR / "build_patient_level_tables.py")] + remaining)
 
     print(f"\n[vivaxrec] === Step 3/5: prep ===")
-    _run([PY_CMD, str(SCRIPTS_DIR / "prep_pv3rs_inputs.py")] + remaining)
+    _run([PY_CMD, str(COMMANDS_DIR / "prep_pv3rs_inputs.py")] + remaining)
 
     for trial in trials:
         for pair_mode in ["baseline", "consecutive"]:
             print(f"\n[vivaxrec] === Step 4/5: classify — trial={trial} pair_mode={pair_mode} ===")
-            _run([R_CMD, str(SCRIPTS_DIR / "classify_recurrences.R"),
+            _run([R_CMD, str(COMMANDS_DIR / "classify_recurrences.R"),
                   "trial", trial, "pair_mode", pair_mode] + remaining)
 
     for trial in trials:
         print(f"\n[vivaxrec] === Step 5/5: plot — trial={trial} ===")
-        _run([R_CMD, str(SCRIPTS_DIR / "plot_recurrence_classifications.R"),
+        _run([R_CMD, str(COMMANDS_DIR / "plot_recurrence_classifications.R"),
               "trial", trial] + remaining)
 
     print(f"\n[vivaxrec] ✓ Pipeline complete for trial(s): {', '.join(trials)}")
+
+
+# Subcommand registry: name -> (function, one-line help, full description)
+SUBCOMMANDS = {
+    "standardize": (
+        cmd_standardize,
+        "Clean raw input files; produce analysis-ready, dropped, and QC outputs",
+        """\
+Clean raw input files and filter to the metadata universe.
+
+Options:
+  --rel      PATH   Pairwise relatedness TSV (mhap_between_relatedness_estimate.tsv)
+  --coi      PATH   MOIRE COI summary TSV (mhap_effective_COI_summary.tsv)
+  --meta     PATH   Sample metadata TSV
+  --out_dir  DIR    Root output directory (default: standardized_inputs)
+
+Outputs:
+  standardized_inputs/analysis_ready/   cleaned metadata, COI, relatedness
+  standardized_inputs/dropped/          samples not in metadata
+  standardized_inputs/qc/               duplicate IDs, missing dates, flag mismatches"""
+    ),
+    "build": (
+        cmd_build,
+        "Build patient-level infection sequences and recurrence pair tables",
+        """\
+Build patient-level infection sequences and recurrence pair tables.
+
+Options:
+  --analysis_dir  DIR   Path to standardized_inputs/analysis_ready/ (default: standardized_inputs/analysis_ready)
+  --out_dir       DIR   Output directory (default: patient_level_tables)
+
+Outputs:
+  patient_infection_sequence.tsv
+  baseline_pairs_with_relatedness.tsv
+  consecutive_pairs_with_relatedness.tsv
+  baseline_samples.tsv
+  summary_by_trial_site.tsv"""
+    ),
+    "prep": (
+        cmd_prep,
+        "Prepare Pv3Rs-ready input TSVs from patient-level tables",
+        """\
+Prepare Pv3Rs-ready input TSVs from patient-level tables.
+
+Options:
+  --pis      PATH   patient_infection_sequence.tsv
+  --geno     PATH   mhap_filtered.tsv (combined long-format genotype file)
+  --out_dir  DIR    Root output directory (default: vivaxrec_inputs)
+
+Outputs per trial found in the data:
+  master_samples.tsv
+  per_sample_locus_alleles.tsv
+  d0_dr_pairs.tsv
+  allele_freq_from_D0.tsv"""
+    ),
+    "classify": (
+        cmd_classify,
+        "Run recurrence classification (DCiFER + Pv3Rs)",
+        """\
+Run recurrence classification (DCiFER + Pv3Rs).
+
+Flags are passed as space-separated key value pairs (not --flag style):
+
+Required:
+  trial           TRIAL_NAME          Trial name (must match trial column in patient_infection_sequence.tsv)
+
+Common:
+  pair_mode       baseline|consecutive   Which pair type to classify (default: baseline)
+  input_dir       DIR                    patient_level_tables directory
+  geno            PATH                   mhap_filtered.tsv
+  master_dir      DIR                    Root directory containing <trial>/master_samples.tsv
+  out_dir         DIR                    Output directory for this run
+
+Prior / model:
+  max_recrud_days INT          Days threshold for recrudescence reassignment (default: 45)
+  window_days     INT INT      Window boundaries in days, e.g. 35 120 (default: 35 120)
+  pC              F F F        Per-window recrudescence priors (default: 0.08 0.01 0.005)
+  pL              F F F        Per-window relapse priors (default: 0.25 0.70 0.40)
+  lambda_foi_w    FLOAT        Daily reinfection rate (default: 0.002)
+  pq_discount     FLOAT        Relapse prior multiplier for PQ arms in windows 2-3 (default: 0.19)
+  pq_arms         ARM [ARM]    PQ treatment arm names (space-separated)
+
+Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
+  first_rec_only  on|off       Re-run on D0 + first recurrence only (default: off)
+  mono_only       on|off       Re-run on patients with monoclonal D0 only (default: off)
+  mono_emoi_th    FLOAT        eMOI threshold for monoclonal D0 definition (default: 1.0)
+
+Example:
+  vivaxrec classify trial mytrial pair_mode baseline max_recrud_days 45 \\
+    input_dir /data/patient_level_tables \\
+    geno /data/mhap_filtered.tsv \\
+    master_dir /data/recurrence-classification \\
+    out_dir /data/recurrence-classification/mytrial/baseline-to-recurrence \\
+    pq_arms "arm1" "arm2" first_rec_only on mono_only on"""
+    ),
+    "plot": (
+        cmd_plot,
+        "Generate classification figures",
+        """\
+Generate classification figures.
+
+Flags are passed as space-separated key value pairs (not --flag style):
+
+  trial       TRIAL_NAME                Trial name (required)
+  pair_mode   baseline|consecutive|both Which outputs to plot (default: both)
+  bl_dir      DIR                       Baseline classification output directory
+  con_dir     DIR                       Consecutive classification output directory
+  figs_dir    DIR                       Output figures directory
+  pis         PATH                      patient_infection_sequence.tsv
+
+Example:
+  vivaxrec plot trial mytrial pair_mode both \\
+    bl_dir  /data/recurrence-classification/mytrial/baseline-to-recurrence \\
+    con_dir /data/recurrence-classification/mytrial/consecutive-pairs \\
+    figs_dir /data/recurrence-classification/mytrial/figures \\
+    pis /data/patient_level_tables/patient_infection_sequence.tsv"""
+    ),
+    "run-all": (
+        cmd_run_all,
+        "Run the full pipeline end to end (standardize → build → prep → classify → plot)",
+        """\
+Run all five pipeline steps in sequence.
+
+Required:
+  --trials  TRIAL [TRIAL ...]   Trial name(s) to run through classify and plot
+
+All other flags are forwarded to the relevant step. Use --flag style for Python
+steps (standardize, build, prep) and key value style for R steps (classify, plot).
+
+Example:
+  vivaxrec run-all \\
+    --trials mytrial \\
+    --rel  /data/mhap_between_relatedness_estimate.tsv \\
+    --coi  /data/mhap_effective_COI_summary.tsv \\
+    --meta /data/metadata.tsv \\
+    --out_dir /data/standardized_inputs"""
+    ),
+}
 
 
 def main():
@@ -132,31 +244,26 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", metavar="{" + ",".join(SUBCOMMANDS) + "}")
 
-    commands = [
-        ("standardize", cmd_standardize,
-         "Clean raw input files; produce analysis-ready, dropped, and QC outputs"),
-        ("build",       cmd_build,
-         "Build patient-level infection sequences and recurrence pair tables"),
-        ("prep",        cmd_prep,
-         "Prepare Pv3Rs-ready input TSVs from patient-level tables"),
-        ("classify",    cmd_classify,
-         "Run recurrence classification (DCiFER + Pv3Rs)"),
-        ("plot",        cmd_plot,
-         "Generate classification figures"),
-        ("run-all",     cmd_run_all,
-         "Run the full pipeline end to end (standardize → build → prep → classify → plot)"),
-    ]
+    for name, (fn, help_text, description) in SUBCOMMANDS.items():
+        sub.add_parser(
+            name,
+            help=help_text,
+            description=description,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
 
-    for name, fn, help_text in commands:
-        p = sub.add_parser(name, help=help_text)
-        p.add_argument("extra", nargs=argparse.REMAINDER,
-                       help="Additional flags passed directly to the underlying script")
-        p.set_defaults(func=fn)
+    # parse_known_args lets flags meant for the underlying script (--rel, --coi etc.)
+    # pass through without argparse rejecting them as unrecognised
+    args, extra = parser.parse_known_args()
 
-    args = parser.parse_args()
-    args.func(args)
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
+
+    fn, _, _ = SUBCOMMANDS[args.command]
+    fn(extra)
 
 
 if __name__ == "__main__":
