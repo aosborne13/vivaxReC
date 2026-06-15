@@ -1155,6 +1155,7 @@ if (requireNamespace("patchwork", quietly = TRUE)) {
            width = hm_ncol * 5.5, height = max(4, 4.2 * hm_nrow), dpi = 300)
   }
 
+}  # end if (requireNamespace("patchwork"))
 
 if (!is.null(p_bl_time_pv) && !is.null(p_con_time_pv)) {
   ggsave(file.path(figs_dir, "panel_timing_comparison_pv3rs.png"),
@@ -1165,52 +1166,59 @@ if (!is.null(p_bl_time_pv) && !is.null(p_con_time_pv)) {
          width = 12, height = 5.5, dpi = 300)
 }
 
-  # ── 7. Summary figures ──────────────────────────────────────────────────────────────────────────────────
-  tryCatch({
-    all_df <- dplyr::bind_rows(
-      if (!is.null(bl))  bl  %>% mutate(pair_mode = "Baseline (D0→DR)"),
-      if (!is.null(con)) con %>% mutate(pair_mode = "Consecutive (DR→DR)")
-    )
+# ── 7. Summary figures ────────────────────────────────────────────────────────
+tryCatch({
+  all_df <- dplyr::bind_rows(
+    if (!is.null(bl))  bl  %>% mutate(pair_mode = "Baseline (D0\u2192DR)"),
+    if (!is.null(con)) con %>% mutate(pair_mode = "Consecutive (DR\u2192DR)")
+  )
 
-    class_by_arm_plot <- function(df_in, class_col, lvls, method_label, panel_lbl) {
-      if (is.null(df_in) ||
-          !has_cols(df_in, c("treatment_arm", class_col, "pair_mode"))) return(NULL)
-      dat <- df_in %>%
-        filter(!is.na(.data[[class_col]]), !is.na(treatment_arm)) %>%
-        mutate(.cls = factor(.data[[class_col]], levels = lvls)) %>%
-        count(treatment_arm, pair_mode, .cls) %>%
-        group_by(treatment_arm, pair_mode) %>%
-        mutate(prop = n / sum(n)) %>% ungroup()
-      sub_lbl <- df_in %>%
-        filter(!is.na(.data[[class_col]]), !is.na(treatment_arm)) %>%
-        group_by(pair_mode) %>%
-        summarise(lbl = sprintf("%s: N=%d pairs (%d indiv)",
-                                first(pair_mode), dplyr::n(),
-                                dplyr::n_distinct(id)),
-                  .groups = "drop") %>%
-        pull(lbl) %>% paste(collapse = "  |  ")
-      ggplot(dat, aes(treatment_arm, prop, fill = .cls)) +
-        geom_col(width = 0.7, color = "white", linewidth = 0.3) +
-        geom_text(aes(label = ifelse(prop >= 0.04,
-                                     paste0(scales::percent(prop, 1), "\n(n=", n, ")"), "")),
-                  position = position_stack(vjust = 0.5),
-                  size = 2.5, color = "white", fontface = "bold") +
-        facet_wrap(~pair_mode) +
-        scale_fill_manual(values = PAL_CLASS, name = "Classification", drop = FALSE) +
-        scale_y_continuous(labels = percent) +
-        labs(x = "Treatment arm", y = "Proportion of recurrences",
-             title = sprintf("%s  Classification by treatment arm (%s)", panel_lbl, method_label),
-             subtitle = sub_lbl) +
-        theme_pub + theme(axis.text.x = element_text(angle = 30, hjust = 1))
-    }
+  class_by_arm_plot <- function(df_in, class_col, lvls, method_label, panel_lbl) {
+    if (is.null(df_in) ||
+        !has_cols(df_in, c("treatment_arm", class_col, "pair_mode"))) return(NULL)
+    dat <- df_in %>%
+      filter(!is.na(.data[[class_col]]), !is.na(treatment_arm)) %>%
+      mutate(.cls = factor(.data[[class_col]], levels = lvls)) %>%
+      count(treatment_arm, pair_mode, .cls) %>%
+      group_by(treatment_arm, pair_mode) %>%
+      mutate(prop = n / sum(n)) %>% ungroup()
+    sub_lbl <- df_in %>%
+      filter(!is.na(.data[[class_col]]), !is.na(treatment_arm)) %>%
+      group_by(pair_mode) %>%
+      summarise(lbl = sprintf("%s: N=%d pairs (%d indiv)",
+                              first(pair_mode), dplyr::n(),
+                              dplyr::n_distinct(id)),
+                .groups = "drop") %>%
+      pull(lbl) %>% paste(collapse = "  |  ")
+    ggplot(dat, aes(treatment_arm, prop, fill = .cls)) +
+      geom_col(width = 0.7, color = "white", linewidth = 0.3) +
+      geom_text(aes(label = ifelse(prop >= 0.04,
+                                   paste0(scales::percent(prop, 1), "\n(n=", n, ")"), "")),
+                position = position_stack(vjust = 0.5),
+                size = 2.5, color = "white", fontface = "bold") +
+      facet_wrap(~pair_mode) +
+      scale_fill_manual(values = PAL_CLASS, name = "Classification", drop = FALSE) +
+      scale_y_continuous(labels = percent) +
+      labs(x = "Treatment arm", y = "Proportion of recurrences",
+           title = sprintf("%s  Classification by treatment arm (%s)", panel_lbl, method_label),
+           subtitle = sub_lbl) +
+      theme_pub + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+  }
 
-                                   c("reinfection","recrudescence","relapse"), "Pv3Rs", "A")
-    if (!is.null(pA_pv3rs))
-      ggsave(file.path(figs_dir, "panel_A_classification_pv3rs.png"),
-             pA_pv3rs, width = 10, height = 5.5, dpi = 300)
-    message(">> wrote per-method Panel A classification figures")
+  pA_pv3rs <- class_by_arm_plot(all_df,
+                                 "pv3rs_call",
+                                 c("reinfection", "uncertain", "relapse"),
+                                 "Pv3Rs", "A")
+  if (!is.null(pA_pv3rs))
+    ggsave(file.path(figs_dir, "panel_A_classification_pv3rs.png"),
+           pA_pv3rs, width = 10, height = 5.5, dpi = 300)
+  message(">> wrote per-method Panel A classification figures")
 
-  if (!requireNamespace("patchwork", quietly = TRUE)) { message(">> patchwork required — skipping"); return(invisible(NULL)) }
+}, error = function(e) {
+  message(">> WARNING: summary figures failed: ", conditionMessage(e))
+})
+plot_connected_dots_first_rec <- function(bl) {
+  if (is.null(bl)) return(invisible(NULL))
   rec_col <- if ("recurrence_no" %in% names(bl)) "recurrence_no" else NULL
   df1 <- if (!is.null(rec_col)) bl %>% filter(.data[[rec_col]] == 1L) else bl
   if (!nrow(df1)) { message(">> connected_dots_first_rec: no recurrence_no==1 rows — skipping"); return(invisible(NULL)) }
@@ -1275,8 +1283,8 @@ if (!is.null(p_bl_time_pv) && !is.null(p_con_time_pv)) {
   combined <- patchwork::wrap_plots(arm_plots, nrow = 1) +
     patchwork::plot_annotation(
       title    = sprintf("%s \u2014 Relapse probability: D0 \u2192 first recurrence", TRIAL_UP),
-      subtitle = paste0("Fill = method  |  Shape = eMOI  |  Connector colour = DCiFER IBD bin  |  ",
-                        "Dashed connector = NA or indeterminate (plotted at 0.5)\n",
+      subtitle = paste0("Fill = Pv3Rs call  |  Connector colour = DCiFER IBD bin  |  ",
+                        "Dashed connector = indeterminate"),
       theme = theme(plot.title    = element_text(size = 13, face = "bold"),
                     plot.subtitle = element_text(size = 8, colour = "grey40"))
     )
