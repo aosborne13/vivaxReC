@@ -183,7 +183,7 @@ Prior / model:
 Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
   first_rec_only  on|off       Re-run on D0 + first recurrence only (default: off)
   mono_only       on|off       Re-run on patients with monoclonal D0 only (default: off)
-  mono_emoi_th    FLOAT        eMOI threshold for monoclonal D0 definition (default: 1.0)
+  mono_emoi_th    FLOAT        eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
 
 Example:
   vivaxrec classify trial mytrial pair_mode baseline max_recrud_days 45 \\
