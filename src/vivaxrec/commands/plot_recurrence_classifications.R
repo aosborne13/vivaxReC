@@ -508,7 +508,8 @@ plot_relapse_prob_vs_day <- function(df, day_col, mode_label, x_label) {
   }
   if (is.null(df)) return(invisible(NULL))
   has_pv  <- all(c("pv3rs_C","pv3rs_L","pv3rs_top") %in% names(df))
-  has_dcf <- "dcifer_r"    %in% names(df)
+  has_dcf <- "dcifer_r" %in% names(df)
+  if (!has_pv && !has_dcf) {
     message(">> relapse_prob_vs_day: no classifier columns found — skipping")
     return(invisible(NULL))
   }
@@ -517,8 +518,8 @@ plot_relapse_prob_vs_day <- function(df, day_col, mode_label, x_label) {
     return(invisible(NULL))
   }
   arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
-  pv3rs_call_pal  <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", "NA" = "grey70")
-                        indeterminate = "#f08a8a", "NA" = "grey70")
+  pv3rs_call_pal <- c(relapse = "#6aa9ff", reinfection = "#2fbf71",
+                       indeterminate = "#f08a8a", "NA" = "grey70")
   dcifer_call_pal <- DCIFER_PAL_BIN
 
   theme_scatter <- theme_pub +
