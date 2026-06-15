@@ -186,15 +186,11 @@ pv3rs_map_two <- function(code) dplyr::case_when(
 prep_classifications <- function(df) {
   df %>%
     mutate(
-      logA0       = suppressWarnings(as.numeric(logA0)),
-      logA1       = suppressWarnings(as.numeric(logA1)),
-      loci_tested = suppressWarnings(as.numeric(loci_tested)),
-      share_frac  = suppressWarnings(as.numeric(share_frac)),
-      novel_loci  = suppressWarnings(as.numeric(novel_loci)),
-      dcifer_r    = suppressWarnings(as.numeric(dcifer_r)),
-      emoi_s1     = suppressWarnings(as.numeric(emoi_s1)),
-      emoi_s2     = suppressWarnings(as.numeric(emoi_s2)),
-      bf10        = exp(logA1 - logA0),
+      loci_tested  = suppressWarnings(as.numeric(loci_tested)),
+      share_frac   = suppressWarnings(as.numeric(share_frac)),
+      dcifer_r     = suppressWarnings(as.numeric(dcifer_r)),
+      emoi_s1      = suppressWarnings(as.numeric(emoi_s1)),
+      emoi_s2      = suppressWarnings(as.numeric(emoi_s2)),
       dcifer_class = dcifer_to_class(dcifer_r),
       dcifer_ibd   = dcifer_ibd_bin(dcifer_r),
       pv3rs_C      = suppressWarnings(as.numeric(pv3rs_C)),
@@ -209,8 +205,6 @@ prep_classifications <- function(df) {
       #   Relapse:     P(L) >= 0.75
       #   Reinfection: P(L) <= 0.25
       #   Uncertain:   P(L) > 0.25 and < 0.75, or missing
-      # Recrudescence is not a primary category — pairs where P(C) dominates
-      # have P(L) < 0.75 and fall into uncertain. See pv3rs_top == "C".
       pv3rs_call   = dplyr::case_when(
         is.na(pv3rs_L)        ~ "uncertain",
         pv3rs_L >= 0.75       ~ "relapse",
