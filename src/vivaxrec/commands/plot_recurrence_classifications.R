@@ -1075,6 +1075,7 @@ plot_ibd_combined <- function(df, mode_label, fname,
 
   if (!day_split || is.null(day_col) || !day_col %in% names(d_base)) {
     # Simple 2×1 layout: boxplot top, density bottom (legend on density)
+    pA <- make_box(d_base, all_title)
     pB <- make_density(d_base, all_title, show_legend = TRUE)
     p  <- patchwork::wrap_plots(pA, pB, ncol = 1, heights = c(1, 1))
     w  <- 8; h <- 10
@@ -1613,6 +1614,7 @@ plot_relapse_averted <- function(df,
   # ── Panel A: all arms (shows the full picture) ─────────────────────────────
   arm_levels <- c(ref_arm, setdiff(dat$treatment_arm, ref_arm))
   arm_pal    <- get_arm_pal(arm_levels)
+  pA <- ggplot(dat %>% mutate(treatment_arm = factor(treatment_arm, arm_levels)),
                aes(treatment_arm, prop, colour = treatment_arm)) +
     geom_point(size = 4) +
     geom_text(aes(label = sprintf("%d/%d", n_relapse, n_classified),
