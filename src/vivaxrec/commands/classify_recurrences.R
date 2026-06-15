@@ -778,7 +778,9 @@ reassign_recrud <- function(df, max_days) {
 #
 # Arguments:
 #   df            the classified output tibble (sub_out after Pv3Rs + reassignment)
-#   meta_d0       one row per patient with their D0 sample info (treatment_arm, emoi)
+#   meta_d0       ALL genotyped D0 patients (full population, never subset-filtered).
+#                 Used as the denominator for n_d0_genotyped regardless of which
+#                 subset is being summarised.
 #   pair_mode     "baseline" or "consecutive"
 #   table_type    "full" | "first_rec" | "mono"
 #   mono_emoi_th  threshold used for mono filter (only used when table_type == "mono")
@@ -1016,23 +1018,18 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
 
   # ── Arm summary TSV ────────────────────────────────────────────────────────
   if (pv3rs_flag == "on" && "pv3rs_L" %in% names(sub_out)) {
-    # Build D0 metadata for denominator: one row per patient with their D0 arm + eMOI
-    meta_d0 <- meta %>%
+    # n_d0_genotyped denominator always comes from ALL genotyped D0 patients,
+    # regardless of subset — the subset filter affects which pairs are classified,
+    # not who was enrolled and genotyped at baseline.
+    meta_d0_full <- meta %>%
       filter(day == 0) %>%
       select(id, treatment_arm) %>%
-      distinct(id, .keep_all = TRUE) %>%
-      left_join(
-        tibble(id = dfsmp$id[dfsmp$day == 0],
-               emoi_d0 = get_emoi(dfsmp$smp_id[dfsmp$day == 0], fallback = NA_real_)),
-        by = "id"
-      ) %>%
-      # Restrict to patients in this subset
-      filter(id %in% unique(sub_dfsmp$id))
+      distinct(id, .keep_all = TRUE)
 
     tryCatch({
       summ <- make_arm_summary(
         df           = sub_out,
-        meta_d0      = meta_d0,
+        meta_d0      = meta_d0_full,
         pair_mode    = pair_mode,
         table_type   = table_type,
         mono_emoi_th = mono_emoi_th
