@@ -420,8 +420,8 @@ n_d0       <- sum(is_d0)
 message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
 
 # ── Allele frequencies from monoclonal D0 samples — used for mono_only run ────
-# Computed upfront so it is ready before any Pv3Rs run starts.
-# Uses D0 samples with raw eMOI <= mono_emoi_th only.
+# Computed directly from monoclonal D0 rows only — not subsetted from the full
+# computation above. Only run if mono_only is requested.
 if (mono_only == "on") {
   d0_emoi_all <- get_emoi(dfsmp$smp_id[is_d0], fallback = NA_real_)
   is_d0_mono  <- is_d0
@@ -433,11 +433,11 @@ if (mono_only == "on") {
     af_mono <- af_full
   } else {
     af_mono <- calc_afreq(dsmp, coi, is_d0_mono)
-    message(sprintf(">> allele frequencies estimated from %d monoclonal D0 samples (eMOI <= %.2f)",
+    message(sprintf(">> allele frequencies estimated from %d monoclonal D0 samples only (eMOI <= %.2f)",
                     n_d0_mono, mono_emoi_th))
   }
 } else {
-  af_mono <- NULL  # not needed
+  af_mono <- NULL
 }
 
 # ── r_bg: trial-specific D0 pairwise dcifer IBD ───────────────────────────────
