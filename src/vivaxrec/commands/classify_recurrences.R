@@ -124,8 +124,9 @@ parse_cli <- function(args) {
     af_model   = 1,   # d0 | pair | mix
     alpha      = 1,
     eps        = 1,
-    cap        = 1,   # kept for back-compat, unused
-    maxrec     = 1,   # maximum number of recurrences per patient passed to Pv3Rs
+    cap            = 1,   # kept for back-compat, unused
+    max_recrud_days = 1,  # post-hoc C->L/I reassignment threshold in days (default: 45)
+    maxrec         = 1,   # maximum number of recurrences per patient passed to Pv3Rs
     armtime        = 5,   # legacy: lambda_foi, bump_center, bump_sdlog, pC_base, pI_base
     # ── Three-window prior (replaces armtime log-normal bump) ──────────────────
     # Biologically informed time windows for recurrence state priors.
@@ -183,7 +184,8 @@ pv3rs_flag  <- tolower(cli$pv3rs    %||% "off")
 af_model    <- tolower(cli$af_model  %||% "mix")
 alpha       <- as.numeric(cli$alpha  %||% 0.15)
 eps         <- as.numeric(cli$eps    %||% 0.05)
-maxrec          <- as.integer(cli$maxrec          %||% 6L)
+maxrec          <- as.integer(cli$maxrec           %||% 6L)
+max_recrud_days <- as.numeric(cli$max_recrud_days  %||% 45)
 
 use_armtime <- !is.null(cli$armtime)
 if (use_armtime) {
