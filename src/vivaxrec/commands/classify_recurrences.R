@@ -656,18 +656,15 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
                   C = NA_real_, L = NA_real_, I = NA_real_, pv3rs_note = inp$note))
   }
   if (n_rec < 1L) return(NULL)
-  # Infer MOI from allele data using Pv3Rs::determine_MOIs.
-  # This is what Pv3Rs was designed for and gives lower, more appropriate
-  # MOI estimates than MOIRE eMOI for the sum(MOIs) <= 8 feasibility check.
-  # MOIRE eMOI (via the coi vector) is still used for dcifer.
+  idx_ord   <- which(dfsmp$id == pid)
+  idx_ord   <- idx_ord[order(dfsmp$day[idx_ord], dfsmp$smp_id[idx_ord])]
+  day_diffs <- diff(dfsmp$day[idx_ord])
+  is_pq     <- pid %in% pq_arm_pids
   MOIs_min <- tryCatch(
     Pv3Rs::determine_MOIs(inp$y),
     error = function(e) rep(1L, length(inp$y))
   )
   if (sum(MOIs_min) > 8L) {
-    # Stepwise fallback: run each consecutive pair independently.
-    # This loses the multi-episode joint inference but recovers classifications
-    # for patients who would otherwise be entirely NA.
     message(sprintf("  >> %s: sum(MOI)=%d>8; running stepwise consecutive pairs",
                     pid, sum(MOIs_min)))
     rows <- vector("list", n_rec)
@@ -681,11 +678,10 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
                             pv3rs_note = sprintf("stepwise_sum(MOI)=%d>8", sum(moi_pair)))
         next
       }
-      dt_k     <- if (length(dt) >= k) dt[k] else NA_real_
-      is_pq    <- pid %in% pq_arm_pids
-      pr_k     <- matrix(tt_prior_row(dt_k, is_pq_arm = is_pq),
-                         nrow = 1L, ncol = 3L,
-                         dimnames = list(NULL, c("C","L","I")))
+      dt_k  <- if (length(day_diffs) >= k) day_diffs[k] else NA_real_
+      pr_k  <- matrix(tt_prior_row(dt_k, is_pq_arm = is_pq),
+                      nrow = 1L, ncol = 3L,
+                      dimnames = list(NULL, c("C","L","I")))
       res_k <- tryCatch(
         Pv3Rs::compute_posterior(y = ep_pair, fs = inp$fs, prior = pr_k,
                                  MOIs = moi_pair, progress.bar = FALSE),
@@ -697,7 +693,6 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
                             pv3rs_note = "stepwise_compute_failed")
       } else {
         m <- as.data.frame(res_k$marg); colnames(m) <- c("C","L","I")
-        # marg has one row per recurrence in the pair; take the recurrence row (row 1)
         rows[[k]] <- tibble(pid = pid, rec_idx = k,
                             C = m[nrow(m), "C"],
                             L = m[nrow(m), "L"],
@@ -707,19 +702,13 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
     }
     return(dplyr::bind_rows(rows))
   }
-  idx_ord  <- which(dfsmp$id == pid)
-  idx_ord  <- idx_ord[order(dfsmp$day[idx_ord], dfsmp$smp_id[idx_ord])]
-  dt       <- diff(dfsmp$day[idx_ord])
-  is_pq    <- pid %in% pq_arm_pids
-  prior    <- matrix(1/3, nrow = n_rec, ncol = 3, dimnames = list(NULL, c("C", "L", "I")))
-  if (length(dt) == n_rec) {
-    # Window-based prior is always used when available (default)
-    # Falls back to legacy log-normal if --armtime supplied without --window_days
+  prior <- matrix(1/3, nrow = n_rec, ncol = 3, dimnames = list(NULL, c("C", "L", "I")))
+  if (length(day_diffs) == n_rec) {
     for (k in seq_len(n_rec)) {
       prior[k, ] <- if (use_armtime && !use_window_prior)
-        tt_prior_row_lognormal(dt[k])
+        tt_prior_row_lognormal(day_diffs[k])
       else
-        tt_prior_row(dt[k], is_pq_arm = is_pq)
+        tt_prior_row(day_diffs[k], is_pq_arm = is_pq)
     }
   } else if (is.finite(pC_base) && is.finite(pI_base)) {
     v <- c(C = pC_base, L = 1 - (pC_base + pI_base), I = pI_base)
