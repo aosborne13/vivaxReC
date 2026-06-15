@@ -807,12 +807,8 @@ make_arm_summary <- function(df, meta_d0, pair_mode, table_type, mono_emoi_th = 
   # Patients with at least one classified pair
   classified_pids <- unique(df$id[!is.na(df$pv3rs_L)])
 
-  # For mono table: additionally require both samples in pair have eMOI <= threshold
-  if (table_type == "mono") {
-    df <- df %>%
-      filter(!is.na(emoi_s1) & emoi_s1 <= mono_emoi_th &
-             !is.na(emoi_s2) & emoi_s2 <= mono_emoi_th)
-  }
+  # For mono table: pairs are already filtered to both-monoclonal before Pv3Rs ran.
+  # No additional pair filtering needed here.
 
   # Classified pairs: rows with a pv3rs_L value
   df_class <- df %>% filter(!is.na(pv3rs_L))
@@ -1190,45 +1186,59 @@ if (first_rec_only == "on") {
 # The summary TSV additionally filters classified pairs to those where BOTH samples
 # have eMOI <= mono_emoi_th, matching the Table Xc definition.
 if (mono_only == "on") {
-  message("\n>> ── Monoclonal-D0 subset run ──────────────────────────────────────")
-  message(sprintf(">> mono_only: eMOI threshold = %.2f (raw post_effective_coi_mean)",
+  message("\n>> ── Monoclonal subset run ─────────────────────────────────────────")
+  message(sprintf(">> mono_only: eMOI threshold = %.2f (both samples in a pair must qualify)",
                   mono_emoi_th))
 
-  # Identify D0 sample per patient from dfsmp
-  d0_rows  <- dfsmp[dfsmp$day == 0, ]
-  # Get raw (unrounded) eMOI for D0 samples from the lookup
-  d0_emoi  <- get_emoi(d0_rows$smp_id, fallback = NA_real_)
+  # Filter pair_tbl to pairs where BOTH samples have eMOI <= threshold.
+  # emoi_s1 and emoi_s2 carry the raw post_effective_coi_mean for each sample.
+  mono_pair_mask <- !is.na(pair_tbl$emoi_s1) & pair_tbl$emoi_s1 <= mono_emoi_th &
+                    !is.na(pair_tbl$emoi_s2) & pair_tbl$emoi_s2 <= mono_emoi_th
+  mono_pair_tbl  <- pair_tbl[mono_pair_mask, ]
 
-  # Patients whose D0 eMOI is <= threshold AND is not missing
-  mono_pids <- d0_rows$id[!is.na(d0_emoi) & d0_emoi <= mono_emoi_th]
-  mono_pids <- unique(mono_pids)
+  n_excl_pairs <- nrow(pair_tbl) - nrow(mono_pair_tbl)
+  message(sprintf(">> mono_only: %d pairs qualify (both samples eMOI <= %.2f); %d excluded",
+                  nrow(mono_pair_tbl), mono_emoi_th, n_excl_pairs))
 
-  n_excl_missing <- sum(is.na(d0_emoi))
-  n_excl_poly    <- sum(!is.na(d0_emoi) & d0_emoi > mono_emoi_th)
-
-  message(sprintf(">> mono_only: %d patients qualify (eMOI <= %.2f)",
-                  length(mono_pids), mono_emoi_th))
-  message(sprintf(">> mono_only: excluded %d polyclonal D0 (eMOI > %.2f), %d missing eMOI",
-                  n_excl_poly, mono_emoi_th, n_excl_missing))
+  # Only patients who have at least one qualifying pair go into Pv3Rs.
+  # dfsmp is also restricted to samples that appear in qualifying pairs,
+  # so Pv3Rs only sees monoclonal episodes.
+  mono_pids <- unique(mono_pair_tbl$id)
 
   if (!length(mono_pids)) {
-    message(">> mono_only: no qualifying patients — skipping")
+    message(">> mono_only: no qualifying pairs — skipping")
   } else {
-    sub <- subset_to_pids(mono_pids, dfsmp, dsmp, coi,
-                          pair_tbl, has_geno, shr_list_full)
+    # Identify all sample IDs involved in qualifying pairs
+    if (pair_mode == "baseline") {
+      mono_sids <- unique(c(mono_pair_tbl$d0_sample_id, mono_pair_tbl$dr_sample_id))
+    } else {
+      mono_sids <- unique(c(mono_pair_tbl$from_sample_id, mono_pair_tbl$to_sample_id))
+    }
+
+    # Restrict dfsmp/dsmp/coi to only these samples for these patients
+    mono_dfsmp_mask <- dfsmp$id %in% mono_pids & dfsmp$smp_id %in% mono_sids
+    mono_dfsmp <- dfsmp[mono_dfsmp_mask, ]
+    mono_dsmp  <- dsmp[mono_dfsmp_mask]
+    mono_coi   <- coi[mono_dfsmp_mask]
+
+    mono_has_geno <- has_geno[mono_pair_mask]
+    mono_shr      <- bind_rows(shr_list_full[mono_pair_mask])
+
+    message(sprintf(">> mono_only: %d patients, %d pairs passed to Pv3Rs",
+                    length(mono_pids), nrow(mono_pair_tbl)))
 
     run_and_write(
-      sub_dfsmp    = sub$dfsmp,
-      sub_dsmp     = sub$dsmp,
-      sub_coi      = sub$coi,
-      sub_pairs    = sub$pairs,
-      sub_has_geno = sub$has_geno,
-      sub_shr      = sub$shr,
+      sub_dfsmp    = mono_dfsmp,
+      sub_dsmp     = mono_dsmp,
+      sub_coi      = mono_coi,
+      sub_pairs    = mono_pair_tbl,
+      sub_has_geno = mono_has_geno,
+      sub_shr      = mono_shr,
       label        = "mono_only",
       out_suffix   = "_mono_only",
       subset_note  = sprintf(
-        "monoclonal D0 only (raw eMOI <= %.2f); n_patients=%d; Pv3Rs re-run on subset",
-        mono_emoi_th, length(mono_pids)),
+        "both samples monoclonal (eMOI <= %.2f); %d patients, %d pairs; Pv3Rs re-run on subset",
+        mono_emoi_th, length(mono_pids), nrow(mono_pair_tbl)),
       table_type   = "mono"
     )
   }
