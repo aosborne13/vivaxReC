@@ -180,7 +180,7 @@ out_dir     <- cli$out_dir    %||% file.path(
 pprior      <- as.numeric(cli$pprior %||% 0.5)
 pdet  <- as.numeric(cli$pdet   %||% 0.9)
 strict_flag <- tolower(cli$strict    %||% "loose")
-pv3rs_flag  <- tolower(cli$pv3rs    %||% "off")
+pv3rs_flag  <- tolower(cli$pv3rs    %||% "on")
 af_model    <- tolower(cli$af_model  %||% "mix")
 alpha       <- as.numeric(cli$alpha  %||% 0.15)
 eps         <- as.numeric(cli$eps    %||% 0.05)
@@ -379,39 +379,48 @@ if (n_coi_na > 0) {
 
 dfsmp$pdet <- 0.9
 
-# ── Allele frequencies (π) from D0 samples ───────────────────────────────────
-is_d0 <- dfsmp$day == 0
-if (!any(is_d0)) stop("No D0 samples found for ", TRIAL_UP, ".")
-
-afreq_base <- dcifer::calcAfreq(dsmp[is_d0], coi[is_d0], tol = 1e-5)
-minfr      <- 1 / sum(coi[is_d0])
-eps_floor  <- max(minfr * eps, 1e-12)
-
-afreq_base <- lapply(afreq_base, function(af) {
-  af[af == 0] <- minfr; af / sum(af)
-})
-
-# Augment with every allele observed across all samples (pairwise-stable)
+# ── Allele frequency computation (reusable for subset runs) ──────────────────
+# Encapsulated so the mono_only run can recompute from monoclonal D0 only.
+# panel_all is built from ALL samples (ensures every observed allele has an
+# entry with at least eps_floor, keeping frequency tables pairwise-stable).
 panel_all <- list()
 for (s in dsmp) for (L in names(s))
   panel_all[[L]] <- union(panel_all[[L]], unique(names(s[[L]])))
 
-afreq_base <- lapply(names(panel_all), function(L) {
-  alleles <- panel_all[[L]]
-  v <- afreq_base[[L]]
-  if (is.null(v)) {
-    v <- rep(eps_floor, length(alleles)); names(v) <- alleles
-  } else {
-    miss <- setdiff(alleles, names(v))
-    if (length(miss)) v <- c(v, setNames(rep(eps_floor, length(miss)), miss))
-  }
-  v / sum(v)
-})
-names(afreq_base) <- names(panel_all)
+calc_afreq <- function(sub_dsmp, sub_coi, sub_is_d0) {
+  if (!any(sub_is_d0)) stop("calc_afreq: no D0 samples in subset.")
+  af <- dcifer::calcAfreq(sub_dsmp[sub_is_d0], sub_coi[sub_is_d0], tol = 1e-5)
+  minfr_sub  <- 1 / sum(sub_coi[sub_is_d0])
+  eps_fl_sub <- max(minfr_sub * eps, 1e-12)
+  af <- lapply(af, function(v) { v[v == 0] <- minfr_sub; v / sum(v) })
+  # Augment with full panel so every allele in the data has a frequency entry
+  af_aug <- lapply(names(panel_all), function(L) {
+    alleles <- panel_all[[L]]
+    v <- af[[L]]
+    if (is.null(v)) {
+      v <- rep(eps_fl_sub, length(alleles)); names(v) <- alleles
+    } else {
+      miss <- setdiff(alleles, names(v))
+      if (length(miss)) v <- c(v, setNames(rep(eps_fl_sub, length(miss)), miss))
+    }
+    v / sum(v)
+  })
+  names(af_aug) <- names(panel_all)
+  list(afreq = af_aug, eps_floor = eps_fl_sub)
+}
+
+# ── Allele frequencies (π) from all D0 samples — used for full & first_rec runs
+is_d0 <- dfsmp$day == 0
+if (!any(is_d0)) stop("No D0 samples found for ", TRIAL_UP, ".")
+
+af_full   <- calc_afreq(dsmp, coi, is_d0)
+afreq_base <- af_full$afreq
+eps_floor  <- af_full$eps_floor
+n_d0       <- sum(is_d0)
+message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
 
 # ── r_bg: trial-specific D0 pairwise dcifer IBD ───────────────────────────────
 # Always computed from the current trial's own D0 samples only (no cross-trial mixing).
-n_d0 <- sum(is_d0)
 message(sprintf(">> computing r_bg from %s D0 samples (n=%d)", TRIAL_UP, n_d0))
 rbg <- mean(
   dcifer::ibdDat(dsmp[is_d0], coi[is_d0], afreq_base, pval = FALSE),
@@ -917,8 +926,24 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   # build_pv3rs_inputs and run_pv3rs_one read dfsmp/dsmp/coi/afreq_base from
   # the enclosing environment. We temporarily rebind them to the subset versions
   # so the functions operate on only the episodes in this run.
-  old_dfsmp <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
+  # For mono_only: afreq_base and eps_floor are also recomputed from monoclonal
+  # D0 samples only — polyclonal samples would distort frequency estimates.
+  old_dfsmp     <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
+  old_afreq     <- afreq_base; old_eps_floor <- eps_floor
   dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
+
+  if (table_type == "mono") {
+    sub_is_d0 <- sub_dfsmp$day == 0
+    if (any(sub_is_d0)) {
+      af_mono    <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
+      afreq_base <<- af_mono$afreq
+      eps_floor  <<- af_mono$eps_floor
+      message(sprintf(">> [%s] allele frequencies recomputed from %d monoclonal D0 samples (eMOI <= %.2f)",
+                      label, sum(sub_is_d0), mono_emoi_th))
+    } else {
+      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — using full afreq_base", label))
+    }
+  }
 
   if (pv3rs_flag == "on") {
     if (!requireNamespace("Pv3Rs", quietly = TRUE)) {
@@ -942,8 +967,9 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     }
   }
 
-  # Restore global dfsmp/dsmp/coi
+  # Restore global dfsmp/dsmp/coi/afreq_base/eps_floor
   dfsmp <<- old_dfsmp; dsmp <<- old_dsmp; coi <<- old_coi
+  afreq_base <<- old_afreq; eps_floor <<- old_eps_floor
 
   # ── Recrudescence reassignment ─────────────────────────────────────────────
   if (pv3rs_flag == "on" && "pv3rs_top" %in% names(sub_out))
@@ -969,6 +995,11 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     sprintf("n_patients: %d  |  n_pairs: %d  |  pairs_with_geno: %d",
             dplyr::n_distinct(sub_dfsmp$id), nrow(sub_pairs), sum(sub_has_geno)),
     sprintf("r_bg = %.4f  (computed from full-dataset D0 samples, n=%d)", rbg, n_d0),
+    sprintf("afreq_base: %s D0 samples used for allele frequency estimation",
+            if (table_type == "mono")
+              sprintf("monoclonal only (eMOI <= %.2f), n=%d", mono_emoi_th, sum(sub_dfsmp$day == 0))
+            else
+              sprintf("all, n=%d", n_d0)),
     sprintf("COI source: MOIRE post_effective_coi_mean (fallback COI=1 for %d samples)",
             n_coi_na),
     sprintf("Pv3Rs=%s | max_recrud_days=%.0f | af_model=%s alpha=%.2f eps=%.3g",
