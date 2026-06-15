@@ -579,7 +579,7 @@ tt_prior_row_lognormal <- function(dt) {
   vec  <- c(C = pC_base, L = pL, I = pI); vec <- pmax(vec, 1e-9); vec / sum(vec)
 }
 
-build_pv3rs_inputs <- function(pid) {
+build_pv3rs_inputs <- function(pid, afreq, eps_fl) {
   idx <- which(dfsmp$id == pid)
   if (length(idx) < 2) return(NULL)
   idx  <- idx[order(dfsmp$day[idx], dfsmp$smp_id[idx])]
@@ -600,7 +600,6 @@ build_pv3rs_inputs <- function(pid) {
     return(list(y = NULL, fs = NULL, sids = sids,
                 note = sprintf("skip: n_rec>%d", maxrec)))
   all_markers <- Reduce(union, lapply(y_raw, names))
-  fs_base     <- afreq_base[names(afreq_base) %in% all_markers]
   if (!length(all_markers))
     return(list(y = NULL, fs = NULL, sids = sids, note = "no markers"))
   y <- lapply(y_raw, function(ep) {
@@ -611,13 +610,13 @@ build_pv3rs_inputs <- function(pid) {
   })
   fs <- lapply(all_markers, function(m) {
     alle_epi <- unique(unlist(lapply(y, \(ep) ep[[m]]))); alle_epi <- alle_epi[!is.na(alle_epi)]
-    base <- afreq_base[[m]]
+    base <- afreq[[m]]
     if (is.null(base)) {
       if (!length(alle_epi)) return(setNames(numeric(0), character(0)))
-      vec <- rep(eps_floor, length(alle_epi)); names(vec) <- alle_epi; return(vec / sum(vec))
+      vec <- rep(eps_fl, length(alle_epi)); names(vec) <- alle_epi; return(vec / sum(vec))
     }
     miss <- setdiff(alle_epi, names(base))
-    if (length(miss)) base <- c(base, setNames(rep(eps_floor, length(miss)), miss))
+    if (length(miss)) base <- c(base, setNames(rep(eps_fl, length(miss)), miss))
     base / sum(base)
   })
   names(fs) <- all_markers
@@ -627,9 +626,9 @@ build_pv3rs_inputs <- function(pid) {
   list(y = lapply(y, \(ep) ep[keep_m2]), fs = fs[keep_m2], sids = sids, note = NULL)
 }
 
-run_pv3rs_one <- function(pid) {
+run_pv3rs_one <- function(pid, afreq, eps_fl) {
   if (!requireNamespace("Pv3Rs", quietly = TRUE)) return(NULL)
-  inp <- build_pv3rs_inputs(pid); if (is.null(inp)) return(NULL)
+  inp <- build_pv3rs_inputs(pid, afreq, eps_fl); if (is.null(inp)) return(NULL)
   n_rec <- max(0L, length(inp$y) - 1L)
   if (!is.null(inp$note)) {
     if (n_rec < 1L) return(NULL)
@@ -928,27 +927,27 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   # so the functions operate on only the episodes in this run.
   # For mono_only: afreq_base and eps_floor are also recomputed from monoclonal
   # D0 samples only — polyclonal samples would distort frequency estimates.
-  old_dfsmp     <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
-  old_afreq     <- afreq_base; old_eps_floor <- eps_floor
+  old_dfsmp <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
+  dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
-  # For mono_only: recompute afreq_base from monoclonal D0 samples BEFORE
-  # rebinding globals, so we use the subset's own dsmp/coi directly.
+  # Determine which allele frequencies to use for this run.
+  # For mono_only: recompute from monoclonal D0 samples only.
+  # For all other runs: use the full-dataset afreq_base.
   if (table_type == "mono") {
     sub_is_d0 <- sub_dfsmp$day == 0
     message(sprintf(">> [%s] D0 samples in mono subset: %d of %d",
                     label, sum(sub_is_d0, na.rm = TRUE), nrow(sub_dfsmp)))
     if (any(sub_is_d0, na.rm = TRUE)) {
-      af_mono   <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
-      afreq_base <<- af_mono$afreq
-      eps_floor  <<- af_mono$eps_floor
-      message(sprintf(">> [%s] allele frequencies recomputed from %d monoclonal D0 samples (eMOI <= %.2f)",
+      af_run    <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
+      message(sprintf(">> [%s] allele frequencies computed from %d monoclonal D0 samples (eMOI <= %.2f)",
                       label, sum(sub_is_d0, na.rm = TRUE), mono_emoi_th))
     } else {
-      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — retaining full afreq_base", label))
+      af_run <- list(afreq = afreq_base, eps_floor = eps_floor)
+      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — using full afreq_base", label))
     }
+  } else {
+    af_run <- list(afreq = afreq_base, eps_floor = eps_floor)
   }
-
-  dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
   if (pv3rs_flag == "on") {
     if (!requireNamespace("Pv3Rs", quietly = TRUE)) {
@@ -956,7 +955,9 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     } else {
       message(sprintf(">> [%s] running Pv3Rs", label))
       pids_sub <- unique(sub_dfsmp$id)
-      pv_tab   <- dplyr::bind_rows(lapply(pids_sub, run_pv3rs_one))
+      pv_tab   <- dplyr::bind_rows(lapply(pids_sub, run_pv3rs_one,
+                                          afreq  = af_run$afreq,
+                                          eps_fl = af_run$eps_floor))
       if (nrow(pv_tab)) {
         pv_tab <- pv_tab %>%
           mutate(pv3rs_top = c("C", "L", "I")[max.col(
@@ -972,9 +973,8 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     }
   }
 
-  # Restore global dfsmp/dsmp/coi/afreq_base/eps_floor
+  # Restore global dfsmp/dsmp/coi
   dfsmp <<- old_dfsmp; dsmp <<- old_dsmp; coi <<- old_coi
-  afreq_base <<- old_afreq; eps_floor <<- old_eps_floor
 
   # ── Recrudescence reassignment ─────────────────────────────────────────────
   if (pv3rs_flag == "on" && "pv3rs_top" %in% names(sub_out))
@@ -1002,7 +1002,7 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     sprintf("r_bg = %.4f  (computed from full-dataset D0 samples, n=%d)", rbg, n_d0),
     sprintf("afreq_base: %s D0 samples used for allele frequency estimation",
             if (table_type == "mono")
-              sprintf("monoclonal only (eMOI <= %.2f), n=%d", mono_emoi_th, sum(sub_dfsmp$day == 0))
+              sprintf("monoclonal only (eMOI <= %.2f), n=%d", mono_emoi_th, sum(sub_dfsmp$day == 0, na.rm = TRUE))
             else
               sprintf("all, n=%d", n_d0)),
     sprintf("COI source: MOIRE post_effective_coi_mean (fallback COI=1 for %d samples)",
