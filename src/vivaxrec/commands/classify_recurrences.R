@@ -409,45 +409,44 @@ calc_afreq <- function(sub_dsmp, sub_coi, sub_is_d0) {
   list(afreq = af_aug, eps_floor = eps_fl_sub)
 }
 
-# ── Allele frequencies (π) from all D0 samples — used for full & first_rec runs
+# ── Allele frequencies (π) and r_bg ──────────────────────────────────────────
+# When mono_only is on: subset to monoclonal D0 samples first, then compute
+# allele frequencies and r_bg from that subset only.
+# When mono_only is off: use all D0 samples.
 is_d0 <- dfsmp$day == 0
 if (!any(is_d0)) stop("No D0 samples found for ", TRIAL_UP, ".")
 
-af_full    <- calc_afreq(dsmp, coi, is_d0)
-afreq_base <- af_full$afreq
-eps_floor  <- af_full$eps_floor
-n_d0       <- sum(is_d0)
-message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
-
-# ── Allele frequencies from monoclonal D0 samples — used for mono_only run ────
-# Computed directly from monoclonal D0 rows only — not subsetted from the full
-# computation above. Only run if mono_only is requested.
 if (mono_only == "on") {
-  d0_emoi_all <- get_emoi(dfsmp$smp_id[is_d0], fallback = NA_real_)
-  is_d0_mono  <- is_d0
-  is_d0_mono[is_d0] <- !is.na(d0_emoi_all) & d0_emoi_all <= mono_emoi_th
-  n_d0_mono   <- sum(is_d0_mono)
-  if (n_d0_mono == 0) {
-    warning("No monoclonal D0 samples found (eMOI <= ", mono_emoi_th,
-            ") — mono_only run will use full afreq_base")
-    af_mono <- af_full
-  } else {
-    af_mono <- calc_afreq(dsmp, coi, is_d0_mono)
-    message(sprintf(">> allele frequencies estimated from %d monoclonal D0 samples only (eMOI <= %.2f)",
-                    n_d0_mono, mono_emoi_th))
-  }
+  d0_emoi     <- get_emoi(dfsmp$smp_id[is_d0], fallback = NA_real_)
+  is_d0_use   <- is_d0
+  is_d0_use[is_d0] <- !is.na(d0_emoi) & d0_emoi <= mono_emoi_th
+  n_d0        <- sum(is_d0_use)
+  if (n_d0 == 0) stop("No monoclonal D0 samples found (eMOI <= ", mono_emoi_th, ")")
+  message(sprintf(">> subsetting to %d monoclonal D0 samples (eMOI <= %.2f) for afreq and r_bg",
+                  n_d0, mono_emoi_th))
+  af_mono  <- calc_afreq(dsmp, coi, is_d0_use)
+  af_full  <- NULL   # not needed
 } else {
-  af_mono <- NULL
+  is_d0_use <- is_d0
+  n_d0      <- sum(is_d0_use)
+  af_full   <- calc_afreq(dsmp, coi, is_d0_use)
+  af_mono   <- NULL  # not needed
+  message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
 }
 
-# ── r_bg: trial-specific D0 pairwise dcifer IBD ───────────────────────────────
-# Always computed from the current trial's own D0 samples only (no cross-trial mixing).
-message(sprintf(">> computing r_bg from %s D0 samples (n=%d)", TRIAL_UP, n_d0))
+# afreq_base and eps_floor are the frequencies used by the current run's
+# Pv3Rs and dcifer calls (make_afreq_pair, r_bg, build_pv3rs_inputs)
+af_run     <- if (mono_only == "on") af_mono else af_full
+afreq_base <- af_run$afreq
+eps_floor  <- af_run$eps_floor
+
+# r_bg: computed from the same D0 sample set used for afreq
+message(sprintf(">> computing r_bg from %d D0 samples", n_d0))
 rbg <- mean(
-  dcifer::ibdDat(dsmp[is_d0], coi[is_d0], afreq_base, pval = FALSE),
+  dcifer::ibdDat(dsmp[is_d0_use], coi[is_d0_use], afreq_base, pval = FALSE),
   na.rm = TRUE
 )
-message(sprintf(">> r_bg = %.4f (trial: %s, n_D0 = %d)", rbg, TRIAL_UP, n_d0))
+message(sprintf(">> r_bg = %.4f (n_D0 = %d)", rbg, n_d0))
 
 # ── Pair-specific allele-frequency helper ─────────────────────────────────────
 make_afreq_pair <- function(i, j) {
@@ -951,13 +950,9 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   old_dfsmp <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
   dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
-  # Determine which allele frequencies to use for this run.
-  # af_full and af_mono are both computed upfront at the top of the script.
-  if (table_type == "mono" && !is.null(af_mono)) {
-    af_run <- af_mono
-  } else {
-    af_run <- af_full
-  }
+  # af_run is already set correctly at the top of the script:
+  # mono_only on  -> af_mono (monoclonal D0 only)
+  # mono_only off -> af_full (all D0)
 
   if (pv3rs_flag == "on") {
     if (!requireNamespace("Pv3Rs", quietly = TRUE)) {
