@@ -929,12 +929,12 @@ plot_dcifer_by_arm_overlap <- function(df, mode_label, fname) {
 # ── 1. Heatmaps ───────────────────────────────────────────────────────────────
 heatmaps_bl  <- list()
 heatmaps_con <- list()
-if (!is.null(bl)) {
-}
-if (!is.null(con)) {
-}
+if (!is.null(bl)) {}
+if (!is.null(con)) {}
 
-# \u2500\u2500 2. Evidence maps \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# ── 2. Evidence maps ──────────────────────────────────────────────────────────
+ev_bl_pv  <- if (!is.null(bl))  evidence_map_pv3rs(bl,  "baseline")    else NULL
+ev_con_pv <- if (!is.null(con)) evidence_map_pv3rs(con, "consecutive") else NULL
 
 # Save evidence maps
 for (nm in list(list(ev_bl_pv,  "evidence_map_baseline_pv3rs.png"),
