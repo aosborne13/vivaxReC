@@ -206,6 +206,9 @@ vivaxrec prep \
 
 Outputs are written to `<out_dir>/` and `<out_dir>/<trial>/` for each trial found in the data.
 
+#### Breakdown of data structure prior to run Pv3Rs
+
+
 ### Step 4 — Classify recurrences
 
 Run once per trial and pair mode. The `trial` flag must match a value in the `trial` column of `patient_infection_sequence.tsv` (case-insensitive).
