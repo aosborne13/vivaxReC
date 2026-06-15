@@ -85,6 +85,7 @@ bash scripts/setup_env.sh
 ```
 ### Step 4: Test the installation.
 ```
+micromamba activate vivaxReC
 vivaxrec --help
 ```
 If installed correctly, you should see:
