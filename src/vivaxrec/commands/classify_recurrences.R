@@ -930,20 +930,25 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   # D0 samples only — polyclonal samples would distort frequency estimates.
   old_dfsmp     <- dfsmp; old_dsmp <- dsmp; old_coi <- coi
   old_afreq     <- afreq_base; old_eps_floor <- eps_floor
-  dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
+  # For mono_only: recompute afreq_base from monoclonal D0 samples BEFORE
+  # rebinding globals, so we use the subset's own dsmp/coi directly.
   if (table_type == "mono") {
     sub_is_d0 <- sub_dfsmp$day == 0
-    if (any(sub_is_d0)) {
-      af_mono    <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
+    message(sprintf(">> [%s] D0 samples in mono subset: %d of %d",
+                    label, sum(sub_is_d0, na.rm = TRUE), nrow(sub_dfsmp)))
+    if (any(sub_is_d0, na.rm = TRUE)) {
+      af_mono   <- calc_afreq(sub_dsmp, sub_coi, sub_is_d0)
       afreq_base <<- af_mono$afreq
       eps_floor  <<- af_mono$eps_floor
       message(sprintf(">> [%s] allele frequencies recomputed from %d monoclonal D0 samples (eMOI <= %.2f)",
-                      label, sum(sub_is_d0), mono_emoi_th))
+                      label, sum(sub_is_d0, na.rm = TRUE), mono_emoi_th))
     } else {
-      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — using full afreq_base", label))
+      message(sprintf(">> [%s] WARNING: no D0 samples in mono subset — retaining full afreq_base", label))
     }
   }
+
+  dfsmp <<- sub_dfsmp; dsmp <<- sub_dsmp; coi <<- sub_coi
 
   if (pv3rs_flag == "on") {
     if (!requireNamespace("Pv3Rs", quietly = TRUE)) {
