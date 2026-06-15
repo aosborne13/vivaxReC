@@ -41,7 +41,6 @@
 #   af_model        d0 | pair | mix
 #   alpha           numeric  (mix weight, default 0.15)
 #   eps             numeric  (smoothing multiplier, default 0.05)
-#   maxmarkers      integer  (Pv3Rs marker cap, default 60)
 #   maxrec          integer  (Pv3Rs max recurrences per patient, default 6)
 #   max_recrud_days numeric  (post-hoc C->L reassignment threshold, default 45)
 #
@@ -126,8 +125,7 @@ parse_cli <- function(args) {
     alpha      = 1,
     eps        = 1,
     cap        = 1,   # kept for back-compat, unused
-    maxmarkers = 1,
-    maxrec         = 1,
+    maxrec     = 1,   # maximum number of recurrences per patient passed to Pv3Rs
     armtime        = 5,   # legacy: lambda_foi, bump_center, bump_sdlog, pC_base, pI_base
     # ── Three-window prior (replaces armtime log-normal bump) ──────────────────
     # Biologically informed time windows for recurrence state priors.
@@ -143,7 +141,7 @@ parse_cli <- function(args) {
     pq_arms        = -1,  # names of PQ treatment arms (variable length; space-separated)
     first_rec_only = 1,   # on | off — re-run Pv3Rs on first-recurrence patients only
     mono_only      = 1,   # on | off — re-run Pv3Rs on monoclonal-D0 patients only (D0 eMOI <= threshold)
-    mono_emoi_th   = 1    # eMOI threshold for monoclonal D0 definition (default: 1.0)
+    mono_emoi_th   = 1    # eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
   )
   out <- list(); i <- 1L
   while (i <= length(args)) {
@@ -185,7 +183,6 @@ pv3rs_flag  <- tolower(cli$pv3rs    %||% "off")
 af_model    <- tolower(cli$af_model  %||% "mix")
 alpha       <- as.numeric(cli$alpha  %||% 0.15)
 eps         <- as.numeric(cli$eps    %||% 0.05)
-maxmarkers      <- as.integer(cli$maxmarkers      %||% 60L)
 maxrec          <- as.integer(cli$maxrec          %||% 6L)
 
 use_armtime <- !is.null(cli$armtime)
@@ -234,7 +231,7 @@ pq_arms_flag     <- cli$pq_arms %||% character(0)
 # The full-dataset run always happens first; subsets are additional outputs.
 first_rec_only   <- tolower(cli$first_rec_only %||% "off")  # on | off
 mono_only        <- tolower(cli$mono_only      %||% "off")  # on | off
-mono_emoi_th     <- as.numeric(cli$mono_emoi_th %||% 1.0)  # raw eMOI threshold (not rounded)
+mono_emoi_th     <- as.numeric(cli$mono_emoi_th %||% 1.1)  # raw eMOI threshold; 1.1 used to account for MOIRE rounding
 
 stopifnot(first_rec_only %in% c("on", "off"))
 stopifnot(mono_only      %in% c("on", "off"))
@@ -536,16 +533,6 @@ has_geno <- !is.na(pair_tbl$.idx_s1) & !is.na(pair_tbl$.idx_s2)
 message(sprintf(">> pairs with genotypes for allele-sharing: %d / %d",
                 sum(has_geno), nrow(pair_tbl)))
 
-# ── Pv3Rs (optional) ─────────────────────────────────────────────────────────
-entropy <- function(p) {
-  p <- p[p > 0 & is.finite(p)]; if (!length(p)) 0 else -sum(p * log(p))
-}
-select_markers <- function(fs, k) {
-  if (!length(fs)) return(character(0))
-  sc <- vapply(fs, \(v) entropy(v / sum(v)), numeric(1))
-  head(names(sort(sc, decreasing = TRUE)), k)
-}
-
 # ── Window-based prior (primary) ──────────────────────────────────────────────
 # Replaces log-normal bump with biologically motivated time windows.
 # Falls back to legacy armtime log-normal if window_days not specified but
@@ -603,8 +590,6 @@ build_pv3rs_inputs <- function(pid) {
                 note = sprintf("skip: n_rec>%d", maxrec)))
   all_markers <- Reduce(union, lapply(y_raw, names))
   fs_base     <- afreq_base[names(afreq_base) %in% all_markers]
-  keep_m      <- select_markers(fs_base, min(maxmarkers, length(fs_base)))
-  all_markers <- intersect(all_markers, keep_m)
   if (!length(all_markers))
     return(list(y = NULL, fs = NULL, sids = sids, note = "no markers"))
   y <- lapply(y_raw, function(ep) {
@@ -762,6 +747,138 @@ reassign_recrud <- function(df, max_days) {
   df
 }
 
+# ── make_arm_summary: produce per-arm classification summary TSV ───────────────
+#
+# Classification is based directly on pv3rs_L using the agreed thresholds:
+#   relapse      : pv3rs_L >= 0.75
+#   reinfection  : pv3rs_L <= 0.25
+#   indeterminate: 0.25 < pv3rs_L < 0.75
+#
+# This is applied to pv3rs_L after recrudescence reassignment (pv3rs_L will have
+# been updated where a C call was reassigned to L or I).
+#
+# Arguments:
+#   df            the classified output tibble (sub_out after Pv3Rs + reassignment)
+#   meta_d0       one row per patient with their D0 sample info (treatment_arm, emoi)
+#   pair_mode     "baseline" or "consecutive"
+#   table_type    "full" | "first_rec" | "mono"
+#   mono_emoi_th  threshold used for mono filter (only used when table_type == "mono")
+#
+# "No recurrences" = patients with a genotyped D0 who have no classified pair.
+make_arm_summary <- function(df, meta_d0, pair_mode, table_type, mono_emoi_th = 1.1) {
+
+  rel_thresh  <- 0.75
+  rei_thresh  <- 0.25
+
+  # D0 genotyped patients per arm (denominator)
+  d0_by_arm <- meta_d0 %>%
+    count(treatment_arm, name = "n_d0_genotyped")
+
+  # Patients with at least one classified pair
+  classified_pids <- unique(df$id[!is.na(df$pv3rs_L)])
+
+  # For mono table: additionally require both samples in pair have eMOI <= threshold
+  if (table_type == "mono") {
+    df <- df %>%
+      filter(!is.na(emoi_s1) & emoi_s1 <= mono_emoi_th &
+             !is.na(emoi_s2) & emoi_s2 <= mono_emoi_th)
+  }
+
+  # Classified pairs: rows with a pv3rs_L value
+  df_class <- df %>% filter(!is.na(pv3rs_L))
+
+  # Apply P(L) threshold classification
+  df_class <- df_class %>%
+    mutate(pl_call = case_when(
+      pv3rs_L >= rel_thresh ~ "relapse",
+      pv3rs_L <= rei_thresh ~ "reinfection",
+      TRUE                  ~ "indeterminate"
+    ))
+
+  # Per-arm: classified pair counts and call breakdown
+  class_by_arm <- df_class %>%
+    group_by(treatment_arm) %>%
+    summarise(
+      classified_pairs  = n(),
+      n_relapse         = sum(pl_call == "relapse"),
+      n_reinfection     = sum(pl_call == "reinfection"),
+      n_indeterminate   = sum(pl_call == "indeterminate"),
+      mean_days         = if ("dr_day" %in% names(.)) mean(dr_day, na.rm = TRUE) else NA_real_,
+      median_days       = if ("dr_day" %in% names(.)) median(dr_day, na.rm = TRUE) else NA_real_,
+      .groups = "drop"
+    )
+
+  # Patients with ≥1 classified pair (for "genotyped recurrence ≥1" column)
+  rec_pids_by_arm <- df %>%
+    filter(id %in% classified_pids) %>%
+    distinct(id, treatment_arm) %>%
+    count(treatment_arm, name = "n_with_recurrence")
+
+  # For mono table: no-pairs column = mono D0 patients with no mono recurrence pair
+  if (table_type == "mono") {
+    mono_class_pids <- unique(df_class$id)
+    no_pairs_by_arm <- meta_d0 %>%
+      group_by(treatment_arm) %>%
+      summarise(
+        n_no_mono_pairs = sum(!id %in% mono_class_pids),
+        .groups = "drop"
+      )
+  }
+
+  # No recurrences = D0 genotyped patients with no classified pair at all
+  no_rec_pids_by_arm <- meta_d0 %>%
+    group_by(treatment_arm) %>%
+    summarise(
+      n_no_recurrence = sum(!id %in% classified_pids),
+      .groups = "drop"
+    )
+
+  # Assemble
+  summ <- d0_by_arm %>%
+    left_join(rec_pids_by_arm,   by = "treatment_arm") %>%
+    left_join(no_rec_pids_by_arm, by = "treatment_arm") %>%
+    left_join(class_by_arm,       by = "treatment_arm") %>%
+    mutate(
+      trial                    = TRIAL_UP,
+      pair_mode                = pair_mode,
+      table_type               = table_type,
+      n_with_recurrence        = tidyr::replace_na(n_with_recurrence, 0L),
+      pct_with_recurrence      = round(100 * n_with_recurrence / n_d0_genotyped, 1),
+      n_no_recurrence          = tidyr::replace_na(n_no_recurrence, 0L),
+      pct_no_recurrence        = round(100 * n_no_recurrence / n_d0_genotyped, 1),
+      classified_pairs         = tidyr::replace_na(classified_pairs, 0L),
+      n_relapse                = tidyr::replace_na(n_relapse, 0L),
+      n_reinfection            = tidyr::replace_na(n_reinfection, 0L),
+      n_indeterminate          = tidyr::replace_na(n_indeterminate, 0L),
+      pct_relapse              = round(100 * n_relapse      / pmax(classified_pairs, 1L), 1),
+      pct_reinfection          = round(100 * n_reinfection  / pmax(classified_pairs, 1L), 1),
+      pct_indeterminate        = round(100 * n_indeterminate / pmax(classified_pairs, 1L), 1)
+    )
+
+  if (table_type == "mono") {
+    summ <- summ %>%
+      left_join(no_pairs_by_arm, by = "treatment_arm") %>%
+      mutate(n_no_mono_pairs = tidyr::replace_na(n_no_mono_pairs, 0L))
+  }
+
+  # Column order
+  base_cols <- c("trial", "pair_mode", "table_type", "treatment_arm",
+                 "n_d0_genotyped", "n_with_recurrence", "pct_with_recurrence",
+                 "n_no_recurrence", "pct_no_recurrence",
+                 "classified_pairs")
+  if (table_type == "full") {
+    base_cols <- c(base_cols, "mean_days", "median_days")
+  }
+  if (table_type == "mono") {
+    base_cols <- c(base_cols, "n_no_mono_pairs")
+  }
+  class_cols <- c("n_relapse", "pct_relapse",
+                  "n_reinfection", "pct_reinfection",
+                  "n_indeterminate", "pct_indeterminate")
+
+  summ %>% select(any_of(c(base_cols, class_cols)))
+}
+
 # ── run_and_write: run Pv3Rs on a restricted dataset and write outputs ─────────
 #
 # This function encapsulates the full Pv3Rs run + output writing so it can be
@@ -782,7 +899,8 @@ reassign_recrud <- function(df, max_days) {
 #   subset_note character description written into sanity_check.txt
 run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
                           sub_pairs, sub_has_geno, sub_shr,
-                          label, out_suffix, subset_note) {
+                          label, out_suffix, subset_note,
+                          table_type = "full") {
 
   message(sprintf("\n>> [%s] n_patients=%d  n_pairs=%d",
                   label, dplyr::n_distinct(sub_dfsmp$id), nrow(sub_pairs)))
@@ -868,6 +986,38 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
   writeLines(sc, file.path(out_dir, sc_fname))
   cat(sprintf(">> [%s] sanity: %s\n", label, file.path(out_dir, sc_fname)))
 
+  # ── Arm summary TSV ────────────────────────────────────────────────────────
+  if (pv3rs_flag == "on" && "pv3rs_L" %in% names(sub_out)) {
+    # Build D0 metadata for denominator: one row per patient with their D0 arm + eMOI
+    meta_d0 <- meta %>%
+      filter(day == 0) %>%
+      select(id, treatment_arm) %>%
+      distinct(id, .keep_all = TRUE) %>%
+      left_join(
+        tibble(id = dfsmp$id[dfsmp$day == 0],
+               emoi_d0 = get_emoi(dfsmp$smp_id[dfsmp$day == 0], fallback = NA_real_)),
+        by = "id"
+      ) %>%
+      # Restrict to patients in this subset
+      filter(id %in% unique(sub_dfsmp$id))
+
+    tryCatch({
+      summ <- make_arm_summary(
+        df           = sub_out,
+        meta_d0      = meta_d0,
+        pair_mode    = pair_mode,
+        table_type   = table_type,
+        mono_emoi_th = mono_emoi_th
+      )
+      summ_fname <- paste0("summary_by_arm", out_suffix, ".tsv")
+      summ_fp    <- file.path(out_dir, summ_fname)
+      write_tsv(summ, summ_fp)
+      cat(sprintf(">> [%s] summary: %s\n", label, summ_fp))
+    }, error = function(e) {
+      message(sprintf(">> [%s] WARNING: arm summary failed: %s", label, conditionMessage(e)))
+    })
+  }
+
   invisible(sub_out)
 }
 
@@ -922,7 +1072,8 @@ run_and_write(
   sub_shr      = bind_rows(shr_list_full),
   label        = "full",
   out_suffix   = "",
-  subset_note  = "all patients (no subset filter)"
+  subset_note  = "all patients (no subset filter)",
+  table_type   = "full"
 )
 
 # ── Run 2: First-recurrence-only subset ───────────────────────────────────────
@@ -982,7 +1133,8 @@ if (first_rec_only == "on") {
         out_suffix   = "_first_rec_only",
         subset_note  = sprintf(
           "first recurrence only (%s == 1); Pv3Rs run on D0 + first DR per patient",
-          rec_col)
+          rec_col),
+        table_type   = "first_rec"
       )
     }
   }
@@ -990,10 +1142,10 @@ if (first_rec_only == "on") {
 
 # ── Run 3: Monoclonal-D0 subset ───────────────────────────────────────────────
 # Re-runs Pv3Rs restricted to patients whose D0 sample has raw eMOI <= mono_emoi_th.
-# "Raw" means the unrounded post_effective_coi_mean from MOIRE, not the integer
-# used internally by dcifer. Only the D0 sample's eMOI is used for inclusion;
-# polyclonal recurrence samples within an included patient are still analysed.
-# This matches the sensitivity analysis denominator definition agreed analytically.
+# Default threshold is 1.1 (not 1.0) to account for MOIRE rounding — values just
+# above 1.0 may represent truly monoclonal infections.
+# The summary TSV additionally filters classified pairs to those where BOTH samples
+# have eMOI <= mono_emoi_th, matching the Table Xc definition.
 if (mono_only == "on") {
   message("\n>> ── Monoclonal-D0 subset run ──────────────────────────────────────")
   message(sprintf(">> mono_only: eMOI threshold = %.2f (raw post_effective_coi_mean)",
@@ -1033,7 +1185,8 @@ if (mono_only == "on") {
       out_suffix   = "_mono_only",
       subset_note  = sprintf(
         "monoclonal D0 only (raw eMOI <= %.2f); n_patients=%d; Pv3Rs re-run on subset",
-        mono_emoi_th, length(mono_pids))
+        mono_emoi_th, length(mono_pids)),
+      table_type   = "mono"
     )
   }
 }
