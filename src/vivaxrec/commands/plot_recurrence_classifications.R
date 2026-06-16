@@ -1273,15 +1273,6 @@ plot_connected_dots_first_rec <- function(bl) {
     group_by(id, day, treatment_arm) %>%
     summarise(ymin = min(value), ymax = max(value),
               any_uncertain = any(uncertain), .groups = "drop")
-  if (has_dcifer) {
-    dcifer_per_pair <- df1 %>%
-      transmute(id = id, day = dr_day, dcifer_ibd = dcifer_ibd_bin(dcifer_r)) %>%
-      distinct(id, day, .keep_all = TRUE)
-    connectors <- connectors %>% left_join(dcifer_per_pair, by = c("id","day"))
-  } else {
-    connectors <- connectors %>% mutate(dcifer_ibd = NA_character_)
-  }
-  connectors <- connectors %>% mutate(dcifer_ibd = factor(dcifer_ibd, levels = DCIFER_LABELS))
 
   arm_plots <- lapply(seq_along(arm_levels), function(i) {
     arm      <- arm_levels[i]
@@ -1292,24 +1283,24 @@ plot_connected_dots_first_rec <- function(bl) {
     p <- ggplot() +
       geom_segment(data = cd,
                    aes(x = day, xend = day, y = ymin, yend = ymax,
-                       colour = dcifer_ibd, linetype = any_uncertain),
-                   linewidth = 0.7) +
-      scale_linetype_manual(values = c("FALSE" = "solid","TRUE" = "dashed"), guide = "none") +
-      scale_colour_manual(values = DCIFER_PAL_BIN, name = "DCiFER IBD",
-                          drop = FALSE, na.value = "grey70") +
-      { if (requireNamespace("ggnewscale", quietly = TRUE)) ggnewscale::new_scale_colour() else list() } +
+                       linetype = any_uncertain),
+                   colour = "grey60", linewidth = 0.7) +
+      scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                            labels = c("FALSE" = "Certain", "TRUE" = "Uncertain"),
+                            name   = NULL,
+                            guide  = if (show_leg) guide_legend() else "none") +
       geom_point(data = pd,
                  aes(x = day, y = value, colour = dcifer_r,
                      alpha = uncertain, shape = shape_lbl),
-                 size = 2.5, stroke = 0.5) +
+                 size = 2.5, stroke = 0.4) +
       scale_colour_gradientn(
-        colours  = c("#cce5ff","#6baed6","#2171b5","#084594"),
+        colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
         limits   = c(0, 1),
         name     = "DCiFER r",
         na.value = "grey70",
         guide    = if (show_leg) guide_colourbar(barwidth = 0.8, barheight = 5) else "none"
       ) +
-      scale_alpha_manual(values = c("FALSE" = 0.85,"TRUE" = 0.35), guide = "none") +
+      scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
       scale_shape_manual(values = MOI_SHAPES, name = "eMOI",
                          guide = if (show_leg) guide_legend() else "none") +
       scale_y_continuous(limits = c(0,1), breaks = seq(0,1,0.25)) +
@@ -1331,8 +1322,9 @@ plot_connected_dots_first_rec <- function(bl) {
   combined <- patchwork::wrap_plots(arm_plots, nrow = 1) +
     patchwork::plot_annotation(
       title    = sprintf("%s \u2014 Relapse probability: D0 \u2192 first recurrence", TRIAL_UP),
-      subtitle = paste0("Fill = Pv3Rs call  |  Connector colour = DCiFER IBD bin  |  ",
-                        "Dashed connector = indeterminate"),
+      subtitle = paste0("Point colour = DCiFER r  |  Shape = eMOI  |  ",
+                        "Dashed connector = indeterminate  |  ",
+                        "Faded points = uncertain Pv3Rs call"),
       theme = theme(plot.title    = element_text(size = 13, face = "bold"),
                     plot.subtitle = element_text(size = 8, colour = "grey40"))
     )
