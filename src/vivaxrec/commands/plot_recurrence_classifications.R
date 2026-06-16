@@ -250,6 +250,10 @@ PAL_CLASS <- c(
   indeterminate = "#f08a8a"   # covers Pv3Rs uncertain and failed classifications
 )
 
+METHOD_PAL <- c("Pv3Rs" = "#9B59B6")
+
+MOI_SHAPES <- c(monoclonal = 21L, polyclonal = 24L, unknown = 23L)
+
 LVL_PV3RS_2 <- c("relapse","reinfection")
 LVL_PV3RS_3 <- c("reinfection","recrudescence","relapse","indeterminate")
 LVL_DCIFER  <- DCIFER_LABELS
@@ -1217,6 +1221,43 @@ tryCatch({
 }, error = function(e) {
   message(">> WARNING: summary figures failed: ", conditionMessage(e))
 })
+# ── build_cd_points: reshape classification data for connected-dots plots ──────
+# Returns a long-format tibble with one row per (patient, day, method) for
+# plotting per-patient relapse probability trajectories.
+# Columns: id, day, treatment_arm, value (P(L)), method, uncertain, shape_lbl
+build_cd_points <- function(df, day_col) {
+  if (is.null(df)) return(NULL)
+  need <- c("id", day_col, "treatment_arm", "pv3rs_L", "pv3rs_call")
+  if (!all(need %in% names(df))) return(NULL)
+
+  rows <- list()
+
+  # Pv3Rs P(L)
+  if ("pv3rs_L" %in% names(df)) {
+    emoi_col <- if ("emoi_s2" %in% names(df)) "emoi_s2" else NULL
+    r <- df %>%
+      transmute(
+        id           = id,
+        day          = .data[[day_col]],
+        treatment_arm = treatment_arm,
+        value        = suppressWarnings(as.numeric(pv3rs_L)),
+        method       = "Pv3Rs",
+        uncertain    = is.na(pv3rs_L) | pv3rs_call == "uncertain",
+        shape_lbl    = if (!is.null(emoi_col))
+                         dplyr::case_when(
+                           is.na(.data[[emoi_col]])      ~ "unknown",
+                           .data[[emoi_col]] <= 1.1      ~ "monoclonal",
+                           TRUE                          ~ "polyclonal"
+                         )
+                       else "unknown"
+      )
+    rows[["Pv3Rs"]] <- r
+  }
+
+  if (!length(rows)) return(NULL)
+  dplyr::bind_rows(rows)
+}
+
 plot_connected_dots_first_rec <- function(bl) {
   if (is.null(bl)) return(invisible(NULL))
   rec_col <- if ("recurrence_no" %in% names(bl)) "recurrence_no" else NULL
