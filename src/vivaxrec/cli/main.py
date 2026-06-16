@@ -7,8 +7,9 @@ Steps:
   2. build         Build patient-level infection sequences and recurrence pair tables
   3. prep          Format data for Pv3Rs (produces master_samples.tsv etc.)
   4. classify      Run recurrence classification (DCiFER + Pv3Rs)
-  5. plot          Generate classification figures
-  6. run-all       Run the full pipeline end to end (steps 1–5)
+  5. summarise     Summarise classification outputs without re-running Pv3Rs
+  6. plot          Generate classification figures
+  7. run-all       Run the full pipeline end to end (steps 1–6)
 
 Usage:
   vivaxrec standardize [options]
@@ -47,6 +48,10 @@ def cmd_build(extra):
 
 def cmd_prep(extra):
     _run([PY_CMD, str(COMMANDS_DIR / "prep_pv3rs_inputs.py")] + extra)
+
+
+def cmd_summarise(extra):
+    _run([PY_CMD, str(COMMANDS_DIR / "summarise_classifications.py")] + extra)
 
 
 def cmd_classify(extra):
@@ -152,6 +157,31 @@ Outputs per trial found in the data:
   per_sample_locus_alleles.tsv
   d0_dr_pairs.tsv
   allele_freq_from_D0.tsv"""
+    ),
+    "summarise": (
+        cmd_summarise,
+        "Summarise classification outputs without re-running Pv3Rs",
+        """\
+Summarise per_infection_classifications TSV files into per-arm tables.
+Reads all available classification files (full, first_rec, mono_only) and
+writes separate summary TSVs for each. Does not re-run Pv3Rs.
+
+Each summary contains:
+  - P(L) threshold breakdown (relapse >= 0.75, reinfection <= 0.25, uncertain)
+  - Pv3Rs top-call breakdown (L, I, C counts per arm)
+  - Mean and median P(L), P(C), P(I) per arm
+
+Options:
+  --bl_dir   DIR   Baseline classification output directory
+  --con_dir  DIR   Consecutive classification output directory
+  --out_dir  DIR   Output directory for summary TSVs (default: same as input)
+  --trial    STR   Trial name for labelling
+
+Example:
+  vivaxrec summarise \\
+    --bl_dir  /data/recurrence-classification/mytrial/baseline-to-recurrence \\
+    --con_dir /data/recurrence-classification/mytrial/consecutive-pairs \\
+    --trial   mytrial"""
     ),
     "classify": (
         cmd_classify,
