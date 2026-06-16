@@ -164,6 +164,20 @@ def summarise_one(df, pair_mode, table_type, trial=None, d0_counts=None):
         mean_C, med_C = stat("pv3rs_C")
         mean_I, med_I = stat("pv3rs_I")
 
+        # ── Days to recurrence (baseline first_rec only) ──────────────────────
+        mean_days = med_days = None
+        if table_type == "first_rec" and pair_mode == "baseline":
+            day_col = None
+            for c in ["dr_day", "current_day", "days_since_baseline_by_day"]:
+                if c in grp.columns:
+                    day_col = c
+                    break
+            if day_col:
+                days = pd.to_numeric(grp[day_col], errors="coerce").dropna()
+                if len(days) > 0:
+                    mean_days = round(float(days.mean()), 1)
+                    med_days  = round(float(days.median()), 1)
+
         rows.append({
             "trial":              trial or "",
             "pair_mode":          pair_mode,
@@ -175,6 +189,9 @@ def summarise_one(df, pair_mode, table_type, trial=None, d0_counts=None):
             # ── Pair counts ───────────────────────────────────────────────────
             "n_pairs_total":      n_pairs,
             "n_pairs_classified": n_class,
+            # ── Days D0 to first recurrence (first_rec baseline only) ─────────
+            "mean_days_to_rec":   mean_days,
+            "median_days_to_rec": med_days,
             # ── P(L) threshold breakdown ──────────────────────────────────────
             "n_relapse_pl":       int(n_rel),
             "pct_relapse_pl":     pct(n_rel),
