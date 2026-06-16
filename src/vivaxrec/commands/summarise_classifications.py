@@ -137,10 +137,13 @@ def summarise_one(df, pair_mode, table_type, trial=None, d0_counts=None):
         else:
             n_no_rec = None
 
-        # ── P(L) threshold breakdown ──────────────────────────────────────────
-        n_rel = (grp["pl_call"] == "relapse").sum()
-        n_rei = (grp["pl_call"] == "reinfection").sum()
-        n_unc = (grp["pl_call"] == "uncertain").sum()
+        # ── P(L) threshold breakdown — applied only to classified pairs ────────
+        # "uncertain" here means P(L) genuinely between thresholds (0.25–0.75).
+        # Pairs with no pv3rs_L result are reported as n_no_pv3rs, not as uncertain.
+        n_no_pv3rs = n_pairs - n_class
+        n_rel = (classified["pl_call"] == "relapse").sum()
+        n_rei = (classified["pl_call"] == "reinfection").sum()
+        n_unc = (classified["pl_call"] == "uncertain").sum()
         pct   = lambda n: round(100 * n / n_class, 1) if n_class > 0 else None
 
         # ── Pv3Rs top-call breakdown ──────────────────────────────────────────
@@ -189,6 +192,7 @@ def summarise_one(df, pair_mode, table_type, trial=None, d0_counts=None):
             # ── Pair counts ───────────────────────────────────────────────────
             "n_pairs_total":      n_pairs,
             "n_pairs_classified": n_class,
+            "n_no_pv3rs":         n_no_pv3rs,
             # ── Days D0 to first recurrence (first_rec baseline only) ─────────
             "mean_days_to_rec":   mean_days,
             "median_days_to_rec": med_days,
