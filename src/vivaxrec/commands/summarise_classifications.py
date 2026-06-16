@@ -59,30 +59,52 @@ def parse_args():
     p.add_argument("--trial",      default=None, help="Trial name for labelling")
     p.add_argument("--out_dir",    default=None,
                    help="Output directory for summary TSVs (default: same as input dir)")
+    p.add_argument("--mono_emoi_th", default=1.1, type=float,
+                   help="eMOI threshold for monoclonal D0 denominator (default: 1.1)")
     return p.parse_args()
 
 
-def load_d0_counts(master_dir, trial):
+def load_d0_counts(master_dir, trial, mono_emoi_th=1.1):
     """
-    Load master_samples.tsv and return a DataFrame with n_d0_genotyped per arm.
-    Returns None if master_dir or trial is not provided / file not found.
+    Load master_samples.tsv and return per-arm D0 counts:
+      - d0_full:  all genotyped D0 patients (denominator for full and first_rec)
+      - d0_mono:  D0 patients with eMOI <= mono_emoi_th (denominator for mono_only)
+    Returns (None, None) if file not found.
     """
     if not master_dir or not trial:
-        return None
+        return None, None
     fp = Path(master_dir) / trial.lower() / "master_samples.tsv"
     if not fp.exists():
         print(f"   WARNING: master_samples.tsv not found at {fp} — n_d0_genotyped will be omitted")
-        return None
+        return None, None
     ms = pd.read_csv(fp, sep="\t")
-    # infection_index == 0 identifies D0 samples
-    if "infection_index" not in ms.columns or "treatment_arm" not in ms.columns:
+    need = {"infection_index", "treatment_arm", "patient_id"}
+    if not need.issubset(ms.columns):
         print(f"   WARNING: master_samples.tsv missing required columns — n_d0_genotyped omitted")
-        return None
+        return None, None
+
     d0 = ms[ms["infection_index"] == 0]
-    counts = (d0.groupby("treatment_arm", dropna=False)
-                .agg(n_d0_genotyped=("patient_id", "nunique"))
-                .reset_index())
-    return counts
+
+    # Full D0 counts — denominator for full and first_rec summaries
+    d0_full = (d0.groupby("treatment_arm", dropna=False)
+                 .agg(n_d0_genotyped=("patient_id", "nunique"))
+                 .reset_index())
+
+    # Monoclonal D0 counts — denominator for mono_only summary
+    if "post_effective_coi_mean" in d0.columns:
+        d0_m = d0[pd.to_numeric(d0["post_effective_coi_mean"], errors="coerce") <= mono_emoi_th]
+        d0_mono = (d0_m.groupby("treatment_arm", dropna=False)
+                       .agg(n_d0_genotyped=("patient_id", "nunique"))
+                       .reset_index())
+        print(f"   Monoclonal D0 counts (eMOI <= {mono_emoi_th}): "
+              f"{int(d0_mono['n_d0_genotyped'].sum())} patients across "
+              f"{len(d0_mono)} arms")
+    else:
+        print(f"   WARNING: post_effective_coi_mean not in master_samples.tsv — "
+              f"mono D0 denominator will use full D0 counts")
+        d0_mono = d0_full
+
+    return d0_full, d0_mono
 
 
 def pl_call(pv3rs_L):
@@ -223,7 +245,7 @@ def summarise_one(df, pair_mode, table_type, trial=None, d0_counts=None):
     return pd.DataFrame(rows)
 
 
-def process_dir(input_dir, pair_mode, out_dir, trial, d0_counts):
+def process_dir(input_dir, pair_mode, out_dir, trial, d0_full, d0_mono):
     input_dir = Path(input_dir)
     out_dir   = Path(out_dir) if out_dir else input_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -238,6 +260,9 @@ def process_dir(input_dir, pair_mode, out_dir, trial, d0_counts):
         print(f"   [{pair_mode}] reading {fname} ...")
         df = pd.read_csv(fp, sep="\t")
         print(f"   [{pair_mode}] {len(df)} rows, {df['treatment_arm'].nunique()} arms")
+
+        # Use monoclonal D0 counts as denominator for mono_only; full counts otherwise
+        d0_counts = d0_mono if table_type == "mono_only" else d0_full
 
         summ = summarise_one(df, pair_mode=pair_mode, table_type=table_type,
                              trial=trial, d0_counts=d0_counts)
@@ -259,22 +284,23 @@ def main():
         raise SystemExit(1)
 
     print(f"\n>> summarise_classifications")
-    print(f"   trial:      {args.trial or '(not specified)'}")
-    print(f"   master_dir: {args.master_dir or '(not provided — n_d0_genotyped will be omitted)'}")
+    print(f"   trial:        {args.trial or '(not specified)'}")
+    print(f"   master_dir:   {args.master_dir or '(not provided — n_d0_genotyped will be omitted)'}")
+    print(f"   mono_emoi_th: {args.mono_emoi_th}")
 
-    d0_counts = load_d0_counts(args.master_dir, args.trial)
-    if d0_counts is not None:
-        print(f"   D0 counts loaded: {len(d0_counts)} arms")
+    d0_full, d0_mono = load_d0_counts(args.master_dir, args.trial, args.mono_emoi_th)
+    if d0_full is not None:
+        print(f"   Full D0 counts: {int(d0_full['n_d0_genotyped'].sum())} patients across {len(d0_full)} arms")
 
     if args.bl_dir:
         print(f"\n>> baseline: {args.bl_dir}")
         process_dir(args.bl_dir, "baseline", args.out_dir or args.bl_dir,
-                    args.trial, d0_counts)
+                    args.trial, d0_full, d0_mono)
 
     if args.con_dir:
         print(f"\n>> consecutive: {args.con_dir}")
         process_dir(args.con_dir, "consecutive", args.out_dir or args.con_dir,
-                    args.trial, d0_counts)
+                    args.trial, d0_full, d0_mono)
 
     print("\n✓ done")
 
