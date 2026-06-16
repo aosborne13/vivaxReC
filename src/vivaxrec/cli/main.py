@@ -208,6 +208,7 @@ Prior / model:
   pL              F F F        Per-window relapse priors (default: 0.25 0.70 0.40)
   lambda_foi_w    FLOAT        Daily reinfection rate (default: 0.002)
   pq_discount     FLOAT        Relapse prior multiplier for PQ arms in windows 2-3 (default: 0.19)
+  site            SITE [SITE]  Restrict to one or more sites (space-separated; default: all sites)
   pq_arms         ARM [ARM]    PQ treatment arm names (space-separated)
 
 Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
