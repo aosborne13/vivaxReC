@@ -324,8 +324,15 @@ Summary of key parameters and data quality metrics for the classification run.
 
 ### `summary_by_trial_site.tsv`
 
-Patient and pair counts by trial and site, produced by the `build` step.
+Patient and pair counts by trial and site, produced by the `build` step. Can also be generated using `vivaxrec summarise`.
 
+Example usage:
+```
+vivaxrec summarise \
+  --bl_dir  $BASE/recurrence-classification/$TRIAL/baseline-to-recurrence \
+  --con_dir $BASE/recurrence-classification/$TRIAL/consecutive-pairs \
+  --trial   $TRIAL
+```
 ---
 
 ## Prior system
