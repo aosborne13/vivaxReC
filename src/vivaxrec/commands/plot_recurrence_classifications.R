@@ -27,7 +27,6 @@
 #   con_file    path to a specific consecutive TSV (overrides con_dir search)
 #   figs_dir    path for figures output
 #   pis         path to patient_infection_sequence.tsv
-#   min_rec     integer — minimum consecutive steps for per-patient connected-dots
 #               plot (default: 2, meaning ≥3 total infections D0+DR1+DR2)
 #
 # ── Auto-detected outputs ─────────────────────────────────────────────────────
@@ -38,8 +37,6 @@
 # ── Outputs (connected-dots plots) ───────────────────────────────────────────
 #   relapse_connected_dots_first_rec_<TRIAL>.png
 #     D0→first recurrence, one panel per arm, one connected triplet per patient.
-#   relapse_connected_dots_by_patient_<TRIAL>.png
-#     Consecutive pairs, patients with ≥min_rec steps, rows=arms, cols=patients.
 #
 # ── Example ───────────────────────────────────────────────────────────────────
 #   BASE=/path/to/your/analysis
@@ -1237,32 +1234,27 @@ build_cd_points <- function(df, day_col) {
   need <- c("id", day_col, "treatment_arm", "pv3rs_L", "pv3rs_call")
   if (!all(need %in% names(df))) return(NULL)
 
-  rows <- list()
+  emoi_col   <- if ("emoi_s2"  %in% names(df)) "emoi_s2"  else NULL
+  dcifer_col <- if ("dcifer_r" %in% names(df)) "dcifer_r" else NULL
 
-  # Pv3Rs P(L)
-  if ("pv3rs_L" %in% names(df)) {
-    emoi_col <- if ("emoi_s2" %in% names(df)) "emoi_s2" else NULL
-    r <- df %>%
-      transmute(
-        id           = id,
-        day          = .data[[day_col]],
-        treatment_arm = treatment_arm,
-        value        = suppressWarnings(as.numeric(pv3rs_L)),
-        method       = "Pv3Rs",
-        uncertain    = is.na(pv3rs_L) | pv3rs_call == "uncertain",
-        shape_lbl    = if (!is.null(emoi_col))
-                         dplyr::case_when(
-                           is.na(.data[[emoi_col]])      ~ "unknown",
-                           .data[[emoi_col]] <= 1.1      ~ "monoclonal",
-                           TRUE                          ~ "polyclonal"
-                         )
-                       else "unknown"
-      )
-    rows[["Pv3Rs"]] <- r
-  }
-
-  if (!length(rows)) return(NULL)
-  dplyr::bind_rows(rows)
+  df %>%
+    transmute(
+      id            = id,
+      day           = .data[[day_col]],
+      treatment_arm = treatment_arm,
+      value         = suppressWarnings(as.numeric(pv3rs_L)),
+      uncertain     = is.na(pv3rs_L) | pv3rs_call == "uncertain",
+      dcifer_r      = if (!is.null(dcifer_col))
+                        suppressWarnings(as.numeric(.data[[dcifer_col]]))
+                      else NA_real_,
+      shape_lbl     = if (!is.null(emoi_col))
+                        dplyr::case_when(
+                          is.na(.data[[emoi_col]])  ~ "unknown",
+                          .data[[emoi_col]] <= 1.1  ~ "monoclonal",
+                          TRUE                      ~ "polyclonal"
+                        )
+                      else "unknown"
+    )
 }
 
 plot_connected_dots_first_rec <- function(bl) {
@@ -1305,13 +1297,21 @@ plot_connected_dots_first_rec <- function(bl) {
       scale_linetype_manual(values = c("FALSE" = "solid","TRUE" = "dashed"), guide = "none") +
       scale_colour_manual(values = DCIFER_PAL_BIN, name = "DCiFER IBD",
                           drop = FALSE, na.value = "grey70") +
-      { if (requireNamespace("ggnewscale", quietly = TRUE)) ggnewscale::new_scale_fill() else list() } +
+      { if (requireNamespace("ggnewscale", quietly = TRUE)) ggnewscale::new_scale_colour() else list() } +
       geom_point(data = pd,
-                 aes(x = day, y = value, fill = method, alpha = uncertain, shape = shape_lbl),
-                 colour = "grey20", size = 2.5, stroke = 0.5) +
-      scale_fill_manual(values = METHOD_PAL, name = "Method") +
+                 aes(x = day, y = value, colour = dcifer_r,
+                     alpha = uncertain, shape = shape_lbl),
+                 size = 2.5, stroke = 0.5) +
+      scale_colour_gradientn(
+        colours  = c("#cce5ff","#6baed6","#2171b5","#084594"),
+        limits   = c(0, 1),
+        name     = "DCiFER r",
+        na.value = "grey70",
+        guide    = if (show_leg) guide_colourbar(barwidth = 0.8, barheight = 5) else "none"
+      ) +
       scale_alpha_manual(values = c("FALSE" = 0.85,"TRUE" = 0.35), guide = "none") +
-      scale_shape_manual(values = MOI_SHAPES, name = "eMOI") +
+      scale_shape_manual(values = MOI_SHAPES, name = "eMOI",
+                         guide = if (show_leg) guide_legend() else "none") +
       scale_y_continuous(limits = c(0,1), breaks = seq(0,1,0.25)) +
       scale_x_continuous(expand = expansion(mult = 0.08)) +
       labs(title = sprintf("%s  (N=%d)", arm, n_p),
@@ -1344,112 +1344,7 @@ plot_connected_dots_first_rec <- function(bl) {
   invisible(combined)
 }
 
-# ── Connected-dots: consecutive per-patient trajectories ──────────────────────
-plot_connected_dots_by_patient <- function(con, min_rec_steps = 2L) {
-  if (is.null(con)) { message(">> connected_dots_by_patient: no consecutive data — skipping"); return(invisible(NULL)) }
-  if (!requireNamespace("patchwork", quietly = TRUE)) { message(">> patchwork required — skipping"); return(invisible(NULL)) }
-
-  pts_all <- build_cd_points(con, day_col = "to_day")
-  if (is.null(pts_all) || !nrow(pts_all)) return(invisible(NULL))
-
-  step_counts <- pts_all %>%
-    group_by(id) %>%
-    summarise(n_steps = dplyr::n_distinct(day), .groups = "drop") %>%
-    filter(n_steps >= min_rec_steps)
-  if (!nrow(step_counts)) {
-    message(sprintf(">> connected_dots_by_patient: no patients with >= %d steps — skipping", min_rec_steps))
-    return(invisible(NULL))
-  }
-  pts <- pts_all %>% filter(id %in% step_counts$id)
-
-  pat_order <- pts %>%
-    group_by(treatment_arm, id) %>%
-    summarise(n_steps = dplyr::n_distinct(day), .groups = "drop") %>%
-    arrange(treatment_arm, desc(n_steps), id)
-  arm_levels <- sort(unique(na.omit(pat_order$treatment_arm)))
-
-  build_arm_row <- function(arm) {
-    arm_pats <- pat_order %>% filter(treatment_arm == arm) %>% pull(id)
-    if (!length(arm_pats)) return(NULL)
-    pat_plots <- lapply(arm_pats, function(pid) {
-      pd <- pts %>% filter(id == pid) %>% arrange(day)
-      if (!nrow(pd)) return(NULL)
-      connectors <- pd %>%
-        group_by(day) %>%
-        summarise(ymin = min(value), ymax = max(value),
-                  any_uncertain = any(uncertain), .groups = "drop")
-      segs <- pd %>%
-        group_by(method) %>% arrange(day) %>%
-        mutate(x_end = lead(day), y_end = lead(value), unc_end = lead(uncertain),
-               seg_dashed = uncertain | dplyr::coalesce(unc_end, FALSE)) %>%
-        filter(!is.na(x_end)) %>% ungroup()
-
-      ggplot() +
-        geom_segment(data = connectors,
-                     aes(x = day, xend = day, y = ymin, yend = ymax,
-                         linetype = any_uncertain),
-                     colour = "grey60", linewidth = 0.4) +
-        scale_linetype_manual(values = c("FALSE" = "solid","TRUE" = "dashed"), guide = "none") +
-        geom_segment(data = segs,
-                     aes(x = day, xend = x_end, y = value, yend = y_end,
-                         colour = method, linetype = seg_dashed),
-                     linewidth = 0.7) +
-        geom_point(data = pd,
-                   aes(x = day, y = value, fill = method,
-                       colour = uncertain, shape = shape_lbl),
-                   size = 2.2, stroke = 0.5) +
-        scale_colour_manual(
-          values = c(setNames(METHOD_PAL, names(METHOD_PAL)), "FALSE" = "grey20", "TRUE" = "grey60"),
-          guide  = "none") +
-        scale_fill_manual(values = METHOD_PAL, name = "Method", drop = FALSE) +
-        scale_shape_manual(values = MOI_SHAPES, name = "eMOI", drop = FALSE) +
-        scale_y_continuous(limits = c(0,1), breaks = c(0,0.5,1), labels = c("0","0.5","1")) +
-        scale_x_continuous(expand = expansion(mult = 0.12)) +
-        labs(title = pid, x = "Days since D0", y = NULL) +
-        theme_cd +
-        theme(plot.title = element_text(size = 7, face = "plain"),
-              axis.text.x = element_text(size = 6),
-              axis.text.y = element_text(size = 6),
-              legend.position = "none")
-    })
-    pat_plots <- Filter(Negate(is.null), pat_plots)
-    if (!length(pat_plots)) return(NULL)
-    row_plot <- patchwork::wrap_plots(pat_plots, nrow = 1) +
-      patchwork::plot_annotation(
-        title = sprintf("%s  (N=%d patients, \u2265%d steps)", arm, length(pat_plots), min_rec_steps),
-        theme = theme(plot.title = element_text(size = 9, face = "bold", colour = "grey20"))
-      )
-    list(plot = row_plot, n_pats = length(pat_plots))
-  }
-
-  arm_rows <- lapply(arm_levels, build_arm_row)
-  names(arm_rows) <- arm_levels
-  arm_rows <- Filter(Negate(is.null), arm_rows)
-  if (!length(arm_rows)) { message(">> connected_dots_by_patient: no arm rows produced — skipping"); return(invisible(NULL)) }
-
-  row_plots <- lapply(arm_rows, `[[`, "plot")
-  max_pats  <- max(vapply(arm_rows, `[[`, 1L, "n_pats"))
-  pw <- max(8, max_pats * 1.8 + 1.5)
-  ph <- length(arm_rows) * 3.2 + 1.5
-
-  combined <- patchwork::wrap_plots(row_plots, ncol = 1) +
-    patchwork::plot_annotation(
-      title    = sprintf("%s \u2014 Relapse probability: per-patient consecutive trajectories", TRIAL_UP),
-      subtitle = paste0("Colour = method  |  Shape = eMOI of recurrence sample  |  ",
-                        "Grey / dashed = NA or indeterminate (plotted at 0.5)\n",
-                        sprintf("Patients with \u2265%d consecutive recurrence steps shown", min_rec_steps)),
-      theme = theme(plot.title    = element_text(size = 13, face = "bold"),
-                    plot.subtitle = element_text(size = 8,  colour = "grey40"))
-    )
-  fname <- sprintf("relapse_connected_dots_by_patient_%s.png", TRIAL_UP)
-  ggsave(file.path(figs_dir, fname), combined,
-         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
-  message(">> wrote: ", fname)
-  invisible(combined)
-}
-
 plot_connected_dots_first_rec(bl)
-plot_connected_dots_by_patient(con, min_rec_steps = min_rec)
 
 # =============================================================================
 # Reinfection rank plot — first-rec-only baseline data only
@@ -1460,6 +1355,7 @@ plot_reinfection_rank <- function(df) {
     return(invisible(NULL))
   }
   if (is.null(df)) return(invisible(NULL))
+  need <- c("treatment_arm", "pv3rs_I")
   missing_cols <- setdiff(need, names(df))
   if (length(missing_cols)) {
     message(">> reinfection rank plot: missing columns — ",
@@ -1484,10 +1380,14 @@ plot_reinfection_rank <- function(df) {
 
   arm_levels <- sort(unique(na.omit(as.character(d$treatment_arm))))
   segs <- d %>%
-           treatment_arm = factor(treatment_arm, levels = arm_levels))
+    group_by(treatment_arm, rank) %>%
+    summarise(xmin = min(rank, na.rm = TRUE),
+              xmax = max(rank, na.rm = TRUE), .groups = "drop") %>%
+    mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
   d_long <- d %>%
+    tidyr::pivot_longer(cols = starts_with("p_reinf_pv3rs"),
                         names_to = "series", values_to = "p_reinf") %>%
-           series = factor(series, levels = names(series_pal)),
+    mutate(series        = factor("Pv3Rs", levels = names(series_pal)),
            treatment_arm = factor(treatment_arm, levels = arm_levels)) %>%
     filter(is.finite(p_reinf))
   if (!nrow(d_long)) return(invisible(NULL))
@@ -1528,9 +1428,8 @@ plot_reinfection_rank <- function(df) {
 
   combined <- patchwork::wrap_plots(arm_plots, nrow = 1) +
     patchwork::plot_annotation(
-      title    = sprintf("%s \u2014 First recurrence: reinfection probability by method", TRIAL_UP),
-                        "Dotted line connects the two estimates per patient\n",
-                        "Patients ranked within each arm by mean of the two estimates"),
+      title    = sprintf("%s \u2014 First recurrence: reinfection probability (Pv3Rs)", TRIAL_UP),
+      subtitle = "Patients ranked within each arm by reinfection probability",
       theme = theme(plot.title    = element_text(size = 13, face = "bold"),
                     plot.subtitle = element_text(size = 8,  colour = "grey40"))
     )
