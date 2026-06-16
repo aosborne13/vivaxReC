@@ -172,16 +172,18 @@ Each summary contains:
   - Mean and median P(L), P(C), P(I) per arm
 
 Options:
-  --bl_dir   DIR   Baseline classification output directory
-  --con_dir  DIR   Consecutive classification output directory
-  --out_dir  DIR   Output directory for summary TSVs (default: same as input)
-  --trial    STR   Trial name for labelling
+  --bl_dir      DIR   Baseline classification output directory
+  --con_dir     DIR   Consecutive classification output directory
+  --master_dir  DIR   Directory containing <trial>/master_samples.tsv (from prep step)
+  --trial       STR   Trial name for labelling
+  --out_dir     DIR   Output directory for summary TSVs (default: same as input)
 
 Example:
   vivaxrec summarise \\
-    --bl_dir  /data/recurrence-classification/mytrial/baseline-to-recurrence \\
-    --con_dir /data/recurrence-classification/mytrial/consecutive-pairs \\
-    --trial   mytrial"""
+    --bl_dir     /data/recurrence-classification/mytrial/baseline-to-recurrence \\
+    --con_dir    /data/recurrence-classification/mytrial/consecutive-pairs \\
+    --master_dir /data/recurrence-classification \\
+    --trial      mytrial"""
     ),
     "classify": (
         cmd_classify,
