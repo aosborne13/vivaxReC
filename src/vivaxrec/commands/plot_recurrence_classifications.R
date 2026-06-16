@@ -1290,10 +1290,10 @@ plot_connected_dots_first_rec <- function(bl) {
                             name   = NULL,
                             guide  = if (show_leg) guide_legend() else "none") +
       geom_point(data = pd,
-                 aes(x = day, y = value, colour = dcifer_r,
+                 aes(x = day, y = value, fill = dcifer_r,
                      alpha = uncertain, shape = shape_lbl),
-                 size = 2.5, stroke = 0.4) +
-      scale_colour_gradientn(
+                 colour = "grey30", size = 2.5, stroke = 0.3) +
+      scale_fill_gradientn(
         colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
         limits   = c(0, 1),
         name     = "DCiFER r",
@@ -1322,7 +1322,7 @@ plot_connected_dots_first_rec <- function(bl) {
   combined <- patchwork::wrap_plots(arm_plots, nrow = 1) +
     patchwork::plot_annotation(
       title    = sprintf("%s \u2014 Relapse probability: D0 \u2192 first recurrence", TRIAL_UP),
-      subtitle = paste0("Point colour = DCiFER r  |  Shape = eMOI  |  ",
+      subtitle = paste0("Point fill = DCiFER r  |  Shape = eMOI  |  ",
                         "Dashed connector = indeterminate  |  ",
                         "Faded points = uncertain Pv3Rs call"),
       theme = theme(plot.title    = element_text(size = 13, face = "bold"),
