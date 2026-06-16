@@ -250,7 +250,16 @@ PAL_CLASS <- c(
   indeterminate = "#f08a8a"   # covers Pv3Rs uncertain and failed classifications
 )
 
-METHOD_PAL <- c("Pv3Rs" = "#9B59B6")
+theme_cd <- theme_pub +
+  theme(
+    axis.text.x      = element_text(angle = 0, hjust = 0.5, size = 8),
+    strip.text       = element_text(face = "bold", size = 9),
+    legend.position  = "right",
+    panel.grid.minor = element_blank(),
+    panel.spacing    = unit(0.8, "lines")
+  )
+
+
 
 MOI_SHAPES <- c(monoclonal = 21L, polyclonal = 24L, unknown = 23L)
 
