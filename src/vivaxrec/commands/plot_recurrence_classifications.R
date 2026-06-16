@@ -250,16 +250,7 @@ PAL_CLASS <- c(
   indeterminate = "#f08a8a"   # covers Pv3Rs uncertain and failed classifications
 )
 
-theme_cd <- theme_pub +
-  theme(
-    axis.text.x      = element_text(angle = 0, hjust = 0.5, size = 8),
-    strip.text       = element_text(face = "bold", size = 9),
-    legend.position  = "right",
-    panel.grid.minor = element_blank(),
-    panel.spacing    = unit(0.8, "lines")
-  )
-
-
+METHOD_PAL <- c("Pv3Rs" = "#9B59B6")
 
 MOI_SHAPES <- c(monoclonal = 21L, polyclonal = 24L, unknown = 23L)
 
@@ -268,8 +259,6 @@ LVL_PV3RS_3 <- c("reinfection","recrudescence","relapse","indeterminate")
 LVL_DCIFER  <- DCIFER_LABELS
 
 # ── Treatment arm colour palettes ─────────────────────────────────────────────
-# Colours are assigned automatically from the Okabe-Ito palette.
-# For reproducible colours across runs, arm names are sorted before assignment.
 get_arm_pal <- function(arm_vec) {
   arms <- sort(unique(arm_vec[!is.na(arm_vec)]))
   okabe <- c("#E69F00","#56B4E9","#009E73","#F0E442",
@@ -278,12 +267,21 @@ get_arm_pal <- function(arm_vec) {
   pal
 }
 
-# ── Theme ─────────────────────────────────────────────────────────────────────
+# ── Themes ────────────────────────────────────────────────────────────────────
 theme_pub <- theme_minimal(base_size = 12) +
   theme(plot.title   = element_text(size = 13, face = "bold"),
         legend.title = element_text(size = 9),
         legend.text  = element_text(size = 8),
         strip.text   = element_text(face = "bold"))
+
+theme_cd <- theme_pub +
+  theme(
+    axis.text.x      = element_text(angle = 0, hjust = 0.5, size = 8),
+    strip.text       = element_text(face = "bold", size = 9),
+    legend.position  = "right",
+    panel.grid.minor = element_blank(),
+    panel.spacing    = unit(0.8, "lines")
+  )
 
 hm_theme <- theme_minimal(base_size = 11) +
   theme(plot.title   = element_text(size = 12, face = "bold"),
