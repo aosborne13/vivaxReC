@@ -142,7 +142,8 @@ parse_cli <- function(args) {
     pq_arms        = -1,  # names of PQ treatment arms (variable length; space-separated)
     first_rec_only = 1,   # on | off — re-run Pv3Rs on first-recurrence patients only
     mono_only      = 1,   # on | off — re-run Pv3Rs on monoclonal-D0 patients only (D0 eMOI <= threshold)
-    mono_emoi_th   = 1    # eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
+    mono_emoi_th   = 1,   # eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
+    site           = -1   # site name(s) to restrict analysis to (variable length; space-separated)
   )
   out <- list(); i <- 1L
   while (i <= length(args)) {
@@ -234,6 +235,7 @@ pq_arms_flag     <- cli$pq_arms %||% character(0)
 first_rec_only   <- tolower(cli$first_rec_only %||% "off")  # on | off
 mono_only        <- tolower(cli$mono_only      %||% "off")  # on | off
 mono_emoi_th     <- as.numeric(cli$mono_emoi_th %||% 1.1)  # raw eMOI threshold; 1.1 used to account for MOIRE rounding
+site_filter      <- cli$site %||% character(0)              # site name(s); empty = no filter
 
 stopifnot(first_rec_only %in% c("on", "off"))
 stopifnot(mono_only      %in% c("on", "off"))
@@ -299,6 +301,11 @@ pairs_raw <- read_tsv(
 pairs <- pairs_raw %>%
   filter(toupper(trial) == TRIAL_UP, !is.na(relatedness))
 
+if (length(site_filter) > 0) {
+  pairs <- pairs %>% filter(site %in% site_filter)
+  message(sprintf(">> site filter applied: %s", paste(site_filter, collapse = ", ")))
+}
+
 message(sprintf(">> pairs loaded: %d rows (trial=%s, after dropping NA relatedness)",
                 nrow(pairs), TRIAL_UP))
 if (nrow(pairs) == 0)
@@ -330,12 +337,26 @@ samples <- read_tsv(master_fp, show_col_types = FALSE)
 meta <- samples %>%
   transmute(
     sample_id,
-    id            = as.character(patient_id),   # external_id from patient_infection_sequence
+    id            = as.character(patient_id),
     day           = suppressWarnings(as.integer(day)),
     time_point    = as.character(time_point),
     treatment_arm = as.character(treatment_arm),
     site          = as.character(site)
   )
+
+# ── Site filter ───────────────────────────────────────────────────────────────
+# When site_filter is supplied, restrict meta (and therefore dfsmp, dsmp, coi,
+# and all allele frequency estimates) to samples from the specified site(s) only.
+# This ensures allele frequencies are estimated from site-specific D0 samples
+# and Pv3Rs only sees episodes from that site — consistent with the mono_only logic.
+if (length(site_filter) > 0) {
+  n_before_site <- nrow(meta)
+  meta <- meta %>% filter(site %in% site_filter)
+  message(sprintf(">> site filter: retained %d of %d samples (site(s): %s)",
+                  nrow(meta), n_before_site, paste(site_filter, collapse = ", ")))
+  if (nrow(meta) == 0)
+    stop("No samples found for site(s): ", paste(site_filter, collapse = ", "))
+}
 
 # ── Format genotypes via dcifer ───────────────────────────────────────────────
 dfgen    <- geno %>% transmute(smp_id = sample_id, locus, allele)
@@ -988,7 +1009,9 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
             as.numeric(quantile(v, 0.75)), max(v))
   }
   sc <- c(
-    sprintf("TRIAL: %s | pair_mode: %s | subset: %s", TRIAL_UP, pair_mode, subset_note),
+    sprintf("TRIAL: %s | pair_mode: %s | subset: %s | site: %s",
+            TRIAL_UP, pair_mode, subset_note,
+            if (length(site_filter)) paste(site_filter, collapse = ", ") else "all sites"),
     sprintf("n_patients: %d  |  n_pairs: %d  |  pairs_with_geno: %d",
             dplyr::n_distinct(sub_dfsmp$id), nrow(sub_pairs), sum(sub_has_geno)),
     sprintf("r_bg = %.4f  (computed from full-dataset D0 samples, n=%d)", rbg, n_d0),
