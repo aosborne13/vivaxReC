@@ -1611,29 +1611,49 @@ plot_combined_posteriors <- function(bl, con) {
 
   # ── Helper: build a posterior probability scatter row ────────────────────────
   build_posterior_row <- function(post_col, y_label, point_colour,
-                                  show_strip = FALSE, show_xlab = FALSE) {
+                                  show_strip = FALSE, show_xlab = FALSE,
+                                  show_legend = FALSE) {
     d <- df %>%
       mutate(
-        .y    = suppressWarnings(as.numeric(.data[[post_col]])),
+        .y      = suppressWarnings(as.numeric(.data[[post_col]])),
         treatment_arm = factor(treatment_arm, levels = arm_levels),
-        .day  = suppressWarnings(as.numeric(.data[[day_col]]))
-      ) %>% filter(is.finite(.y), is.finite(.day))
+        .day    = suppressWarnings(as.numeric(.data[[day_col]]))
+      ) %>% filter(is.finite(.y), is.finite(.day)) %>%
+      mutate(.fill = ifelse(.y >= 0.5, "high", "low"))
+
     if (!nrow(d)) return(NULL)
+
+    fill_pal <- c(high = point_colour, low = "grey75")
+    fill_labels <- c(high = sprintf("≥0.5"), low = "<0.5")
 
     p <- ggplot(d, aes(x = .day, y = .y)) +
       geom_hline(yintercept = 0.5, linetype = "dotted",
                  colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-      geom_point(colour = point_colour, size = 2.5, alpha = 0.72) +
+      geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
+                 size = 2.5, stroke = 0.4, alpha = 0.85) +
       geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = if (show_strip) arm_labeller_pv else label_value) +
+      scale_fill_manual(
+        values = fill_pal, labels = fill_labels,
+        name   = "Pv3Rs posterior",
+        guide  = if (show_legend)
+                   guide_legend(
+                     title.theme  = element_text(size = 13, face = "bold"),
+                     label.theme  = element_text(size = 12),
+                     override.aes = list(shape = 21, size = 5,
+                                         colour = "grey30", stroke = 0.4)
+                   )
+                 else "none"
+      ) +
       scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
       labs(y = y_label,
            x = if (show_xlab) "Days since D0" else NULL) +
       theme_row
-    if (!show_strip) p <- p + no_strip
-    if (show_xlab)   p <- p + theme(axis.title.x = element_text(size = 12))
+    if (!show_strip)  p <- p + no_strip
+    if (show_xlab)    p <- p + theme(axis.title.x = element_text(size = 12))
+    if (!show_legend) p <- p + theme(legend.position = "none")
     p
   }
 
@@ -1708,11 +1728,14 @@ plot_combined_posteriors <- function(bl, con) {
 
   # ── Rows C, D, E: raw posteriors ─────────────────────────────────────────────
   row_C <- build_posterior_row("pv3rs_L", "P(L)  relapse",
-                               "#6aa9ff", show_strip = FALSE, show_xlab = FALSE)
+                               "#6aa9ff", show_strip = FALSE, show_xlab = FALSE,
+                               show_legend = FALSE)
   row_D <- build_posterior_row("pv3rs_I", "P(I)  reinfection",
-                               "#2fbf71", show_strip = FALSE, show_xlab = FALSE)
+                               "#2fbf71", show_strip = FALSE, show_xlab = FALSE,
+                               show_legend = TRUE)
   row_E <- build_posterior_row("pv3rs_C", "P(C)  recrudescence",
-                               "#e74c3c", show_strip = FALSE, show_xlab = FALSE)
+                               "#e74c3c", show_strip = FALSE, show_xlab = FALSE,
+                               show_legend = FALSE)
 
   # ── Row F: P(L) threshold classification (same as C in combined_pub) ─────────
   pv3rs_pal_F    <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
@@ -1762,6 +1785,12 @@ plot_combined_posteriors <- function(bl, con) {
     theme_row + no_strip +
     theme(axis.title.x = element_text(size = 12))
 
+  # ── Legend placement: each legend appears beside its relevant row only ────────
+  # Rows A+B: Dcifer r colourbar + eMOI shape legend
+  # Row D:    Pv3Rs posterior legend (high/low)
+  # Row F:    Classification legend
+  # All others: no legend
+
   rows   <- Filter(Negate(is.null), list(row_A, row_B, row_C, row_D, row_E, row_F))
   n_rows <- length(rows)
   if (!n_rows) return(invisible(NULL))
@@ -1769,7 +1798,6 @@ plot_combined_posteriors <- function(bl, con) {
   tags <- LETTERS[seq_len(n_rows)]
 
   combined <- patchwork::wrap_plots(rows, ncol = 1, heights = rep(1, n_rows)) +
-    patchwork::plot_layout(guides = "collect") +
     patchwork::plot_annotation(
       tag_levels = list(tags),
       theme = theme(
