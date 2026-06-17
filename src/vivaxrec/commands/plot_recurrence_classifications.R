@@ -1496,8 +1496,7 @@ plot_combined_pub <- function(bl, con) {
                 inherit.aes = FALSE) +
     geom_point(aes(colour = .call, fill = .call, shape = .call),
                size = 2.5, alpha = 0.82, stroke = 0.9) +
-    facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
-               labeller = arm_labeller_pv) +
+    facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
     scale_colour_manual(values = c(relapse = "#3a86c8", reinfection = "#1e8c4a",
                                    indeterminate = "#e74c3c"),
                         guide = "none") +
@@ -1518,7 +1517,7 @@ plot_combined_pub <- function(bl, con) {
     scale_shape_manual(values = pv3rs_shapes, guide = "none") +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
     labs(x = "Days since D0", y = "P(relapse)") +
-    theme_row +
+    theme_row + no_strip +
     theme(axis.title.x = element_text(size = 12))
 
   # ── Assemble: A / B / C rows, shared legends collected to right ──────────────
