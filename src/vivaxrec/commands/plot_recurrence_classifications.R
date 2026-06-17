@@ -1616,24 +1616,6 @@ plot_combined_posteriors <- function(bl, con) {
     "recrudescence"  = "#e74c3c",
     "low"            = "grey75"
   )
-  # Dummy data for the full 4-entry Pv3Rs legend shown beside row B only
-  pv3rs_legend_df <- data.frame(
-    .cat = factor(c("relapse","reinfection","recrudescence","low"),
-                  levels = c("relapse","reinfection","recrudescence","low")),
-    .x = NA_real_, .y = NA_real_
-  )
-  pv3rs_legend_pal <- c(
-    relapse       = "#6aa9ff",
-    reinfection   = "#2fbf71",
-    recrudescence = "#e74c3c",
-    low           = "grey75"
-  )
-  pv3rs_legend_labels <- c(
-    relapse       = "Relapse p(L) \u22650.5",
-    reinfection   = "Reinfection p(I) \u22650.5",
-    recrudescence = "Recrudescence p(C) \u22650.5",
-    low           = "Posterior prob. <0.5"
-  )
 
   post_legend_guide <- function() {
     guide_legend(
@@ -1644,7 +1626,7 @@ plot_combined_posteriors <- function(bl, con) {
     )
   }
 
-  # ── Helper: posterior scatter row with eMOI shape ────────────────────────────
+  # ── Helper: posterior scatter row ─────────────────────────────────────────────
   build_posterior_row <- function(post_col, y_label, high_fill_name,
                                   show_strip, show_xlab,
                                   show_post_legend, show_emoi_legend) {
@@ -1656,7 +1638,11 @@ plot_combined_posteriors <- function(bl, con) {
         emoi_s2 = suppressWarnings(as.numeric(emoi_s2))
       ) %>% filter(is.finite(.y), is.finite(.day)) %>%
       mutate(
-        .fill      = ifelse(.y >= 0.5, high_fill_name, "low"),
+        # Use a factor with all 4 levels so drop=FALSE shows them all in legend
+        .fill      = factor(
+          ifelse(.y >= 0.5, high_fill_name, "low"),
+          levels = c("relapse","reinfection","recrudescence","low")
+        ),
         .shape_lbl = dplyr::case_when(
           is.na(emoi_s2)   ~ "unknown",
           emoi_s2 <= 1.1   ~ "monoclonal",
@@ -1674,8 +1660,18 @@ plot_combined_posteriors <- function(bl, con) {
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = if (show_strip) arm_labeller_pv else label_value) +
-      # Real fill scale — no legend (legend comes from dummy layer on B)
-      scale_fill_manual(values = post_pal, guide = "none") +
+      scale_fill_manual(
+        values = post_pal,
+        labels = c(
+          relapse       = "Relapse p(L) \u22650.5",
+          reinfection   = "Reinfection p(I) \u22650.5",
+          recrudescence = "Recrudescence p(C) \u22650.5",
+          low           = "Posterior prob. <0.5"
+        ),
+        name   = "Pv3Rs",
+        drop   = FALSE,   # always show all 4 entries even if not all present
+        guide  = if (show_post_legend) post_legend_guide() else "none"
+      ) +
       scale_shape_manual(
         values = MOI_SHAPES, name = "eMOI",
         guide  = if (show_emoi_legend)
@@ -1692,20 +1688,6 @@ plot_combined_posteriors <- function(bl, con) {
       theme_row
     if (!show_strip) p <- p + no_strip
     if (show_xlab)   p <- p + theme(axis.title.x = element_text(size = 12))
-
-    # Add dummy layer for the full Pv3Rs legend on row B only
-    if (show_post_legend) {
-      p <- p +
-        geom_point(data = pv3rs_legend_df,
-                   aes(x = .x, y = .y, fill = .cat),
-                   shape = 21, size = 0, colour = NA, inherit.aes = FALSE) +
-        scale_fill_manual(
-          values = pv3rs_legend_pal,
-          labels = pv3rs_legend_labels,
-          name   = "Pv3Rs",
-          guide  = post_legend_guide()
-        )
-    }
     p
   }
 
@@ -1737,43 +1719,6 @@ plot_combined_posteriors <- function(bl, con) {
   # ── Rows B, C, D: raw posteriors with eMOI shape ─────────────────────────────
   # The Pv3Rs legend (all 4 entries) and eMOI legend appear on row B only.
   # Rows C and D show eMOI shape only (no fill legend — same palette explained in B).
-
-  # Dummy data for the full Pv3Rs legend — ensures all 4 entries always appear
-  pv3rs_legend_df <- tibble::tibble(
-    .label = factor(c("relapse","reinfection","recrudescence","low"),
-                    levels = c("relapse","reinfection","recrudescence","low")),
-    .x = NA_real_, .y = NA_real_
-  )
-
-  row_B <- build_posterior_row("pv3rs_L", "p(L)  relapse", "relapse",
-                               show_strip = FALSE, show_xlab = FALSE,
-                               show_post_legend = TRUE, show_emoi_legend = TRUE)
-
-  if (!is.null(row_B)) {
-    row_B <- row_B +
-      geom_point(data = pv3rs_legend_df,
-                 aes(x = .x, y = .y, fill = .label),
-                 shape = 21, colour = "grey30", size = 5, stroke = 0.4,
-                 inherit.aes = FALSE, na.rm = TRUE) +
-      scale_fill_manual(
-        values = c(relapse       = "#6aa9ff",
-                   reinfection   = "#2fbf71",
-                   recrudescence = "#e74c3c",
-                   low           = "grey75"),
-        labels = c(relapse       = "Relapse p(L) \u22650.5",
-                   reinfection   = "Reinfection p(I) \u22650.5",
-                   recrudescence = "Recrudescence p(C) \u22650.5",
-                   low           = "Posterior prob. <0.5"),
-        name   = "Pv3Rs",
-        drop   = FALSE,
-        guide  = guide_legend(
-          title.theme  = element_text(size = 13, face = "bold"),
-          label.theme  = element_text(size = 12),
-          override.aes = list(shape = 21, size = 5,
-                              colour = "grey30", stroke = 0.4)
-        )
-      )
-  }
 
   row_C <- build_posterior_row("pv3rs_I", "p(I)  reinfection", "reinfection",
                                show_strip = FALSE, show_xlab = FALSE,
