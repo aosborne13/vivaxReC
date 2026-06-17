@@ -1574,7 +1574,7 @@ plot_combined_posteriors <- function(bl, con) {
   arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
   n_arms     <- length(arm_levels)
 
-  dcifer_fill <- scale_fill_gradientn(
+  dcifer_fill_scale <- scale_fill_gradientn(
     colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
     limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
     guide    = guide_colourbar(barwidth = 1.2, barheight = 7,
@@ -1609,51 +1609,83 @@ plot_combined_posteriors <- function(bl, con) {
     mutate(label = sprintf("%s\n%d pairs, %d individuals", treatment_arm, n_pairs, n_indiv))
   arm_labeller_pv <- as_labeller(setNames(arm_n_pv$label, arm_n_pv$treatment_arm))
 
-  # ── Helper: build a posterior probability scatter row ────────────────────────
-  build_posterior_row <- function(post_col, y_label, point_colour,
-                                  show_strip = FALSE, show_xlab = FALSE,
-                                  show_legend = FALSE) {
+  # Posterior legend labels and palette — shared across B, C, D
+  post_pal <- c(
+    "relapse"        = "#6aa9ff",
+    "reinfection"    = "#2fbf71",
+    "recrudescence"  = "#e74c3c",
+    "low"            = "grey75"
+  )
+  post_legend <- guide_legend(
+    title        = "Pv3Rs posterior",
+    title.theme  = element_text(size = 13, face = "bold"),
+    label.theme  = element_text(size = 12),
+    override.aes = list(
+      shape  = c(21L, 21L, 21L, 21L),
+      size   = c(5, 5, 5, 5),
+      fill   = c("#6aa9ff", "#2fbf71", "#e74c3c", "grey75"),
+      colour = rep("grey30", 4),
+      stroke = rep(0.4, 4)
+    )
+  )
+
+  # ── Helper: posterior scatter row with eMOI shape ────────────────────────────
+  build_posterior_row <- function(post_col, y_label, high_fill_name,
+                                  show_strip, show_xlab,
+                                  show_post_legend, show_emoi_legend) {
     d <- df %>%
       mutate(
-        .y      = suppressWarnings(as.numeric(.data[[post_col]])),
+        .y    = suppressWarnings(as.numeric(.data[[post_col]])),
         treatment_arm = factor(treatment_arm, levels = arm_levels),
-        .day    = suppressWarnings(as.numeric(.data[[day_col]]))
+        .day  = suppressWarnings(as.numeric(.data[[day_col]])),
+        emoi_s2 = suppressWarnings(as.numeric(emoi_s2))
       ) %>% filter(is.finite(.y), is.finite(.day)) %>%
-      mutate(.fill = ifelse(.y >= 0.5, "high", "low"))
-
+      mutate(
+        .fill      = ifelse(.y >= 0.5, high_fill_name, "low"),
+        .shape_lbl = dplyr::case_when(
+          is.na(emoi_s2)   ~ "unknown",
+          emoi_s2 <= 1.1   ~ "monoclonal",
+          TRUE             ~ "polyclonal"
+        )
+      )
     if (!nrow(d)) return(NULL)
-
-    fill_pal <- c(high = point_colour, low = "grey75")
-    fill_labels <- c(high = sprintf("≥0.5"), low = "<0.5")
 
     p <- ggplot(d, aes(x = .day, y = .y)) +
       geom_hline(yintercept = 0.5, linetype = "dotted",
                  colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-      geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
-                 size = 2.5, stroke = 0.4, alpha = 0.85) +
+      geom_point(aes(fill = .fill, shape = .shape_lbl),
+                 colour = "grey30", size = 2.5, stroke = 0.4, alpha = 0.85) +
       geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = if (show_strip) arm_labeller_pv else label_value) +
       scale_fill_manual(
-        values = fill_pal, labels = fill_labels,
-        name   = "Pv3Rs posterior",
-        guide  = if (show_legend)
+        values = post_pal,
+        labels = c(
+          relapse       = "Relapse p(L) \u22650.5",
+          reinfection   = "Reinfection p(I) \u22650.5",
+          recrudescence = "Recrudescence p(C) \u22650.5",
+          low           = "Posterior prob. <0.5"
+        ),
+        name  = "Pv3Rs posterior",
+        guide = if (show_post_legend) post_legend else "none"
+      ) +
+      scale_shape_manual(
+        values = MOI_SHAPES, name = "eMOI",
+        guide  = if (show_emoi_legend)
                    guide_legend(
                      title.theme  = element_text(size = 13, face = "bold"),
                      label.theme  = element_text(size = 12),
-                     override.aes = list(shape = 21, size = 5,
-                                         colour = "grey30", stroke = 0.4)
+                     override.aes = list(size = 5, fill = "grey60",
+                                         colour = "black", stroke = 0.5)
                    )
                  else "none"
       ) +
       scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-      labs(y = y_label,
-           x = if (show_xlab) "Days since D0" else NULL) +
+      labs(y = y_label, x = if (show_xlab) "Days since D0" else NULL) +
       theme_row
-    if (!show_strip)  p <- p + no_strip
-    if (show_xlab)    p <- p + theme(axis.title.x = element_text(size = 12))
-    if (!show_legend) p <- p + theme(legend.position = "none")
+    if (!show_strip) p <- p + no_strip
+    if (show_xlab)   p <- p + theme(axis.title.x = element_text(size = 12))
     p
   }
 
@@ -1676,72 +1708,28 @@ plot_combined_posteriors <- function(bl, con) {
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = arm_labeller_A) +
-      dcifer_fill +
+      dcifer_fill_scale +
       scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
       labs(y = "Pairwise Relatedness") +
       theme_row
   }
 
-  # ── Row B: connected dots ────────────────────────────────────────────────────
-  pts <- build_cd_points(df, day_col = day_col)
-  row_B <- NULL
-  if (!is.null(pts) && nrow(pts)) {
-    pts <- pts %>% mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
-    cd_all <- pts %>%
-      group_by(id, day, treatment_arm) %>%
-      summarise(ymin = min(value), ymax = max(value),
-                any_uncertain = any(uncertain), .groups = "drop")
+  # ── Rows B, C, D: raw posteriors with eMOI shape ─────────────────────────────
+  row_B <- build_posterior_row("pv3rs_L", "p(L)  relapse",       "relapse",
+                               show_strip = FALSE, show_xlab = FALSE,
+                               show_post_legend = TRUE, show_emoi_legend = TRUE)
+  row_C <- build_posterior_row("pv3rs_I", "p(I)  reinfection",   "reinfection",
+                               show_strip = FALSE, show_xlab = FALSE,
+                               show_post_legend = FALSE, show_emoi_legend = TRUE)
+  row_D <- build_posterior_row("pv3rs_C", "p(C)  recrudescence", "recrudescence",
+                               show_strip = FALSE, show_xlab = FALSE,
+                               show_post_legend = FALSE, show_emoi_legend = TRUE)
 
-    row_B <- ggplot() +
-      geom_segment(data = cd_all,
-                   aes(x = day, xend = day, y = ymin, yend = ymax,
-                       linetype = any_uncertain),
-                   colour = "grey60", linewidth = 0.7) +
-      scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
-                            guide = "none") +
-      geom_smooth(data = pts %>% filter(!is.na(value), is.finite(day), is.finite(value)),
-                  aes(x = day, y = value, group = treatment_arm),
-                  method = "loess", formula = y ~ x, se = TRUE,
-                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22,
-                  inherit.aes = FALSE) +
-      geom_point(data = pts %>% filter(!is.na(value)),
-                 aes(x = day, y = value, fill = dcifer_r,
-                     alpha = uncertain, shape = shape_lbl),
-                 colour = "grey30", size = 3.2, stroke = 0.3) +
-      dcifer_fill +
-      scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
-      scale_shape_manual(
-        values = MOI_SHAPES, name = "eMOI",
-        guide  = guide_legend(
-          title.theme  = element_text(size = 13, face = "bold"),
-          label.theme  = element_text(size = 12),
-          override.aes = list(size = 5, fill = "grey60", colour = "black", stroke = 0.5)
-        )
-      ) +
-      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-      scale_x_continuous(expand = expansion(mult = 0.08)) +
-      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
-                 labeller = arm_labeller_pv) +
-      labs(y = "P(relapse)") +
-      theme_row
-  }
+  # ── Row E: P(L) threshold classification ─────────────────────────────────────
+  pv3rs_pal_E    <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
+  pv3rs_shapes_E <- c(relapse = 21L,       reinfection = 21L,       indeterminate = 4L)
 
-  # ── Rows C, D, E: raw posteriors ─────────────────────────────────────────────
-  row_C <- build_posterior_row("pv3rs_L", "P(L)  relapse",
-                               "#6aa9ff", show_strip = FALSE, show_xlab = FALSE,
-                               show_legend = FALSE)
-  row_D <- build_posterior_row("pv3rs_I", "P(I)  reinfection",
-                               "#2fbf71", show_strip = FALSE, show_xlab = FALSE,
-                               show_legend = TRUE)
-  row_E <- build_posterior_row("pv3rs_C", "P(C)  recrudescence",
-                               "#e74c3c", show_strip = FALSE, show_xlab = FALSE,
-                               show_legend = FALSE)
-
-  # ── Row F: P(L) threshold classification (same as C in combined_pub) ─────────
-  pv3rs_pal_F    <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
-  pv3rs_shapes_F <- c(relapse = 21L,       reinfection = 21L,       indeterminate = 4L)
-
-  d_pv_F <- df %>% mutate(
+  d_pv_E <- df %>% mutate(
     .y    = suppressWarnings(as.numeric(pv3rs_L)),
     .call = factor(dplyr::case_when(
       !is.finite(suppressWarnings(as.numeric(pv3rs_L))) ~ "indeterminate",
@@ -1753,21 +1741,20 @@ plot_combined_posteriors <- function(bl, con) {
     .day = suppressWarnings(as.numeric(.data[[day_col]]))
   ) %>% filter(is.finite(.y), is.finite(.day))
 
-  row_F <- ggplot(d_pv_F, aes(x = .day, y = .y)) +
+  row_E <- ggplot(d_pv_E, aes(x = .day, y = .y)) +
     geom_hline(yintercept = 0.5, linetype = "dotted",
                colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-    geom_smooth(data = d_pv_F %>% filter(.call != "indeterminate"),
-                aes(x = .day, y = .y),
-                method = "loess", formula = y ~ x, se = TRUE,
-                colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22,
-                inherit.aes = FALSE) +
+    geom_smooth(data = d_pv_E %>% filter(.call != "indeterminate"),
+                aes(x = .day, y = .y), method = "loess", formula = y ~ x,
+                se = TRUE, colour = "grey30", fill = "grey80",
+                linewidth = 0.7, alpha = 0.22, inherit.aes = FALSE) +
     geom_point(aes(colour = .call, fill = .call, shape = .call),
                size = 2.5, alpha = 0.82, stroke = 0.9) +
     facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
     scale_colour_manual(values = c(relapse = "#3a86c8", reinfection = "#1e8c4a",
                                    indeterminate = "#e74c3c"), guide = "none") +
     scale_fill_manual(
-      values = pv3rs_pal_F, name = "Classification", drop = FALSE, na.value = "grey70",
+      values = pv3rs_pal_E, name = "Classification", drop = FALSE, na.value = "grey70",
       guide  = guide_legend(
         title.theme  = element_text(size = 13, face = "bold"),
         label.theme  = element_text(size = 12),
@@ -1779,19 +1766,14 @@ plot_combined_posteriors <- function(bl, con) {
         )
       )
     ) +
-    scale_shape_manual(values = pv3rs_shapes_F, guide = "none") +
+    scale_shape_manual(values = pv3rs_shapes_E, guide = "none") +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-    labs(x = "Days since D0", y = "P(relapse)") +
+    labs(x = "Days since D0", y = "p(L)  classification") +
     theme_row + no_strip +
     theme(axis.title.x = element_text(size = 12))
 
-  # ── Legend placement: each legend appears beside its relevant row only ────────
-  # Rows A+B: Dcifer r colourbar + eMOI shape legend
-  # Row D:    Pv3Rs posterior legend (high/low)
-  # Row F:    Classification legend
-  # All others: no legend
-
-  rows   <- Filter(Negate(is.null), list(row_A, row_B, row_C, row_D, row_E, row_F))
+  # ── Assemble ──────────────────────────────────────────────────────────────────
+  rows   <- Filter(Negate(is.null), list(row_A, row_B, row_C, row_D, row_E))
   n_rows <- length(rows)
   if (!n_rows) return(invisible(NULL))
 
@@ -1821,7 +1803,6 @@ plot_combined_posteriors <- function(bl, con) {
   message(">> wrote: ", fname)
   invisible(combined)
 }
-
 plot_combined_posteriors(bl, con)
 
 # =============================================================================
