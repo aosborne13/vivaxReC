@@ -1364,7 +1364,7 @@ plot_combined_pub <- function(bl, con) {
   # Shared DCiFER r palette — used by both scatter (B) and dots (C)
   dcifer_grad <- scale_fill_gradientn(
     colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-    limits   = c(0, 1), name = "DCiFER r", na.value = "grey70",
+    limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
     guide    = guide_colourbar(barwidth = 0.8, barheight = 5,
                                title.position = "top")
   )
@@ -1417,7 +1417,7 @@ plot_combined_pub <- function(bl, con) {
                         na.value = "grey70") +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
     labs(y = "P(relapse)") +
-    theme_row
+    theme_row + no_strip
 
   # ── Row B: DCiFER r scatter, coloured by DCiFER r (fill, same legend as C) ──
   if ("dcifer_r" %in% names(df)) {
@@ -1446,13 +1446,13 @@ plot_combined_pub <- function(bl, con) {
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
       scale_fill_gradientn(
         colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-        limits   = c(0, 1), name = "DCiFER r", na.value = "grey70",
+        limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
         guide    = guide_colourbar(barwidth = 0.8, barheight = 5,
                                    title.position = "top")
       ) +
       scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
       labs(y = "Pairwise relatedness r") +
-      theme_row + no_strip
+      theme_row
   } else {
     row_B <- NULL
   }
@@ -1491,7 +1491,7 @@ plot_combined_pub <- function(bl, con) {
                    colour = "grey30", size = 2.5, stroke = 0.3) +
         scale_fill_gradientn(
           colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-          limits   = c(0, 1), name = "DCiFER r", na.value = "grey70",
+          limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
           guide    = if (show_leg)
                        guide_colourbar(barwidth = 0.8, barheight = 4,
                                        title.position = "top")
@@ -1511,17 +1511,24 @@ plot_combined_pub <- function(bl, con) {
     row_C <- patchwork::wrap_plots(arm_plots_C, nrow = 1)
   }
 
-  # ── Assemble: A on top, B middle, C bottom; A/B/C labels down left side ──────
-  rows   <- Filter(Negate(is.null), list(row_A, row_B, row_C))
+  # ── Assemble: B (Dcifer r scatter), C (connected dots), A (P(relapse)) ───────
+  rows   <- Filter(Negate(is.null), list(row_B, row_C, row_A))
   n_rows <- length(rows)
   if (!n_rows) { message(">> combined_pub: no panels built — skipping"); return(invisible(NULL)) }
 
   tags <- LETTERS[seq_len(n_rows)]
 
   combined <- patchwork::wrap_plots(rows, ncol = 1, heights = rep(1, n_rows)) +
+    patchwork::plot_layout(guides = "collect") &
+    theme(legend.title     = element_text(size = 13, face = "bold"),
+          legend.text      = element_text(size = 12),
+          legend.key.size  = unit(1.0, "cm"),
+          legend.key.height = unit(1.2, "cm"))
+
+  combined <- combined +
     patchwork::plot_annotation(
       tag_levels = list(tags),
-      theme = theme(plot.tag = element_text(size = 13, face = "bold",
+      theme = theme(plot.tag = element_text(size = 14, face = "bold",
                                              margin = margin(r = 4)))
     )
 
