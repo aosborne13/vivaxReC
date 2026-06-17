@@ -1530,16 +1530,6 @@ plot_combined_pub <- function(bl, con) {
   invisible(combined)
 }
 
-  pw <- n_arms * 3.2 + 2.2
-  ph <- n_rows * 3.6
-
-  fname <- sprintf("combined_pub_figure_%s.png", TRIAL_UP)
-  ggsave(file.path(figs_dir, fname), combined,
-         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
-  message(">> wrote: ", fname)
-  invisible(combined)
-}
-
 plot_combined_pub(bl, con)
 
 # =============================================================================
