@@ -1718,8 +1718,11 @@ plot_combined_posteriors <- function(bl, con) {
 
   # ── Rows B, C, D: raw posteriors with eMOI shape ─────────────────────────────
   # The Pv3Rs legend (all 4 entries) and eMOI legend appear on row B only.
-  # Rows C and D show eMOI shape only (no fill legend — same palette explained in B).
+  # Rows C and D show no legends — same palette explained in B.
 
+  row_B <- build_posterior_row("pv3rs_L", "p(L)  relapse", "relapse",
+                               show_strip = FALSE, show_xlab = FALSE,
+                               show_post_legend = TRUE, show_emoi_legend = TRUE)
   row_C <- build_posterior_row("pv3rs_I", "p(I)  reinfection", "reinfection",
                                show_strip = FALSE, show_xlab = FALSE,
                                show_post_legend = FALSE, show_emoi_legend = FALSE)
