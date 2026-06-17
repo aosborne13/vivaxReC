@@ -61,15 +61,24 @@ def parse_args():
                    help="Output directory for summary TSVs (default: same as input dir)")
     p.add_argument("--mono_emoi_th", default=1.1, type=float,
                    help="eMOI threshold for monoclonal D0 denominator (default: 1.1)")
+    p.add_argument("--d0_by_sample", action="store_true", default=False,
+                   help="Count D0 denominator by unique sample_id rather than patient_id. "
+                        "Default is patient_id (one count per patient regardless of how many "
+                        "D0 sample IDs they have). Use --d0_by_sample if your dataset has "
+                        "multiple D0 samples per patient that should each count separately.")
     return p.parse_args()
 
 
-def load_d0_counts(master_dir, trial, mono_emoi_th=1.1):
+def load_d0_counts(master_dir, trial, mono_emoi_th=1.1, d0_by_sample=False):
     """
-    Load master_samples.tsv and return per-arm D0 counts using time_point == 'D0'
-    as the denominator — this directly identifies genotyped baseline samples
-    regardless of day numbering, which is more reliable than day == 0 or
-    infection_index == 0 in cases where baseline genotyping data is missing.
+    Load master_samples.tsv and return per-arm D0 counts using time_point == 'D0'.
+
+    By default counts unique patient_id values (recommended — one patient = one
+    denominator unit regardless of whether they have multiple D0 sample IDs).
+
+    If d0_by_sample=True, counts unique sample_id values instead. Use this only
+    if your dataset intentionally has multiple D0 samples per patient and you want
+    each to contribute separately to the denominator.
 
     Returns:
       d0_full : per-arm counts of all D0 samples (denominator for full/first_rec)
@@ -82,30 +91,34 @@ def load_d0_counts(master_dir, trial, mono_emoi_th=1.1):
         print(f"   WARNING: master_samples.tsv not found at {fp} — n_d0_genotyped will be omitted")
         return None, None
     ms = pd.read_csv(fp, sep="\t")
-    need = {"time_point", "treatment_arm", "patient_id"}
+    need = {"time_point", "treatment_arm", "patient_id", "sample_id"}
     if not need.issubset(ms.columns):
         print(f"   WARNING: master_samples.tsv missing required columns "
               f"(need: {need}) — n_d0_genotyped omitted")
         return None, None
 
+    id_col = "sample_id" if d0_by_sample else "patient_id"
+    count_label = "sample_id" if d0_by_sample else "patient_id"
+    print(f"   D0 denominator: counting unique {count_label}s (time_point == 'D0')")
+
     # Use time_point == "D0" to identify genotyped baseline samples
     d0 = ms[ms["time_point"] == "D0"]
-    n_d0_total = d0["patient_id"].nunique()
-    print(f"   D0 samples (time_point == 'D0'): {len(d0)} rows, {n_d0_total} unique patients")
+    print(f"   D0 samples (time_point == 'D0'): {len(d0)} rows, "
+          f"{d0[id_col].nunique()} unique {count_label}s")
 
-    # Full D0 counts — denominator for full and first_rec summaries
+    # Full D0 counts
     d0_full = (d0.groupby("treatment_arm", dropna=False)
-                 .agg(n_d0_genotyped=("patient_id", "nunique"))
+                 .agg(n_d0_genotyped=(id_col, "nunique"))
                  .reset_index())
 
-    # Monoclonal D0 counts — denominator for mono_only summary
+    # Monoclonal D0 counts
     if "post_effective_coi_mean" in d0.columns:
         d0_m = d0[pd.to_numeric(d0["post_effective_coi_mean"], errors="coerce") <= mono_emoi_th]
         d0_mono = (d0_m.groupby("treatment_arm", dropna=False)
-                       .agg(n_d0_genotyped=("patient_id", "nunique"))
+                       .agg(n_d0_genotyped=(id_col, "nunique"))
                        .reset_index())
         print(f"   Monoclonal D0 (eMOI <= {mono_emoi_th}): "
-              f"{int(d0_mono['n_d0_genotyped'].sum())} patients across {len(d0_mono)} arms")
+              f"{int(d0_mono['n_d0_genotyped'].sum())} {count_label}s across {len(d0_mono)} arms")
     else:
         print(f"   WARNING: post_effective_coi_mean not in master_samples.tsv — "
               f"mono D0 denominator will use full D0 counts")
@@ -295,7 +308,8 @@ def main():
     print(f"   master_dir:   {args.master_dir or '(not provided — n_d0_genotyped will be omitted)'}")
     print(f"   mono_emoi_th: {args.mono_emoi_th}")
 
-    d0_full, d0_mono = load_d0_counts(args.master_dir, args.trial, args.mono_emoi_th)
+    d0_full, d0_mono = load_d0_counts(args.master_dir, args.trial,
+                                       args.mono_emoi_th, args.d0_by_sample)
     if d0_full is not None:
         print(f"   Full D0 counts: {int(d0_full['n_d0_genotyped'].sum())} patients across {len(d0_full)} arms")
 
