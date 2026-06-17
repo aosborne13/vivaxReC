@@ -1339,6 +1339,184 @@ plot_connected_dots_first_rec <- function(bl) {
 plot_connected_dots_first_rec(bl)
 
 # =============================================================================
+# Combined publication figure — A (top) + B + C (bottom row)
+# A: per-patient P(relapse) connected dots, D0→first recurrence
+# B: P(L) vs days since D0, coloured by threshold call
+# C: DCiFER r vs days since D0, coloured by IBD bin
+# Publication-ready: no titles, no uncertain annotation, clean legends
+# =============================================================================
+plot_combined_pub <- function(bl) {
+  if (is.null(bl)) return(invisible(NULL))
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message(">> patchwork required for combined pub figure — skipping")
+    return(invisible(NULL))
+  }
+
+  # ── Panel A: connected dots (first rec only) ─────────────────────────────────
+  # Re-use build_cd_points but suppress the uncertain annotation and strip title
+  rec_col <- if ("recurrence_no" %in% names(bl)) "recurrence_no" else NULL
+  df1     <- if (!is.null(rec_col)) bl %>% filter(.data[[rec_col]] == 1L) else bl
+  pts     <- build_cd_points(df1, day_col = "dr_day")
+
+  pA <- NULL
+  if (!is.null(pts) && nrow(pts)) {
+    arm_levels <- sort(unique(na.omit(pts$treatment_arm)))
+    n_arms     <- length(arm_levels)
+
+    arm_plots_A <- lapply(seq_along(arm_levels), function(i) {
+      arm   <- arm_levels[i]
+      pd    <- pts %>% filter(treatment_arm == arm, !is.na(value))
+      n_p   <- dplyr::n_distinct(pd$id)
+      show_leg <- (i == n_arms)
+
+      cd <- pd %>%
+        group_by(id, day) %>%
+        summarise(ymin = min(value), ymax = max(value),
+                  any_uncertain = any(uncertain), .groups = "drop")
+
+      ggplot() +
+        geom_segment(data = cd,
+                     aes(x = day, xend = day, y = ymin, yend = ymax,
+                         linetype = any_uncertain),
+                     colour = "grey60", linewidth = 0.7) +
+        scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                              guide = "none") +
+        geom_point(data = pd,
+                   aes(x = day, y = value, fill = dcifer_r,
+                       alpha = uncertain, shape = shape_lbl),
+                   colour = "grey30", size = 2.5, stroke = 0.3) +
+        scale_fill_gradientn(
+          colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
+          limits   = c(0, 1),
+          name     = "DCiFER r",
+          na.value = "grey70",
+          guide    = if (show_leg)
+                       guide_colourbar(barwidth = 0.8, barheight = 4,
+                                       title.position = "top")
+                     else "none"
+        ) +
+        scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
+        scale_shape_manual(values = MOI_SHAPES, name = "eMOI",
+                           guide = if (show_leg) guide_legend() else "none") +
+        scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+        scale_x_continuous(expand = expansion(mult = 0.08)) +
+        labs(title = sprintf("%s  (N=%d)", arm, n_p),
+             x = "Days since D0",
+             y = if (i == 1) "P(relapse)" else NULL) +
+        theme_cd +
+        theme(legend.position = if (show_leg) "right" else "none",
+              plot.title = element_text(size = 10, face = "bold"))
+    })
+    pA <- patchwork::wrap_plots(arm_plots_A, nrow = 1)
+  }
+
+  # ── Panels B and C: scatter plots ────────────────────────────────────────────
+  arm_levels_bl <- sort(unique(na.omit(as.character(bl$treatment_arm))))
+  pv3rs_call_pal <- c(relapse = "#6aa9ff", reinfection = "#2fbf71",
+                      indeterminate = "#f08a8a")
+
+  theme_scatter_pub <- theme_pub +
+    theme(strip.text = element_text(face = "bold", size = 9),
+          legend.position = "right",
+          panel.grid.minor = element_blank())
+
+  # Build a clean scatter panel without title
+  build_pub_scatter <- function(d_plot, y_col, y_label, call_col,
+                                call_levels, call_pal, day_col = "dr_day") {
+    if (!all(c(y_col, call_col, day_col) %in% names(d_plot))) return(NULL)
+    d2 <- d_plot %>%
+      filter(is.finite(suppressWarnings(as.numeric(.data[[day_col]]))),
+             is.finite(suppressWarnings(as.numeric(.data[[y_col]])))) %>%
+      mutate(
+        .day  = suppressWarnings(as.numeric(.data[[day_col]])),
+        .y    = suppressWarnings(as.numeric(.data[[y_col]])),
+        .call = factor(as.character(.data[[call_col]]),
+                       levels = call_levels),
+        treatment_arm = factor(treatment_arm, levels = arm_levels_bl)
+      )
+    if (!nrow(d2)) return(NULL)
+
+    arm_n <- d2 %>%
+      group_by(treatment_arm) %>%
+      summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id),
+                .groups = "drop") %>%
+      mutate(label = sprintf("N=%d (%d indiv)", n_pairs, n_indiv),
+             .y = -Inf, .day = Inf)
+
+    ggplot(d2, aes(x = .day, y = .y)) +
+      geom_hline(yintercept = 0.5, linetype = "dotted",
+                 colour = "grey60", linewidth = 0.4, alpha = 0.7) +
+      geom_point(aes(colour = .call), size = 1.8, alpha = 0.72) +
+      geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
+                  colour = "grey30", fill = "grey80",
+                  linewidth = 0.7, alpha = 0.22) +
+      geom_text(data = arm_n,
+                aes(x = .day, y = .y, label = label),
+                hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
+                inherit.aes = FALSE) +
+      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
+      scale_colour_manual(values = call_pal, name = "Call",
+                          drop = TRUE, na.value = "grey70") +
+      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+      labs(x = "Days since D0", y = y_label) +
+      theme_scatter_pub
+  }
+
+  # Panel B: P(L) vs day
+  d_pv <- bl %>% mutate(
+    pv3rs_L_num = suppressWarnings(as.numeric(pv3rs_L)),
+    pv3rs_two   = dplyr::case_when(
+      !is.finite(suppressWarnings(as.numeric(pv3rs_L))) ~ "indeterminate",
+      suppressWarnings(as.numeric(pv3rs_L)) >= 0.75     ~ "relapse",
+      suppressWarnings(as.numeric(pv3rs_L)) <= 0.25     ~ "reinfection",
+      TRUE                                               ~ "indeterminate"
+    ),
+    pv3rs_postR = suppressWarnings(as.numeric(pv3rs_L))
+  )
+  pB <- build_pub_scatter(d_pv, "pv3rs_postR", "P(relapse)",
+                           "pv3rs_two",
+                           c("relapse", "reinfection", "indeterminate"),
+                           pv3rs_call_pal)
+
+  # Panel C: DCiFER r vs day
+  if ("dcifer_r" %in% names(bl) && "dcifer_ibd" %in% names(bl)) {
+    pC <- build_pub_scatter(bl, "dcifer_r", "Pairwise relatedness r",
+                             "dcifer_ibd", DCIFER_LABELS, DCIFER_PAL_BIN)
+  } else {
+    pC <- NULL
+  }
+
+  # ── Assemble ──────────────────────────────────────────────────────────────────
+  bottom_panels <- Filter(Negate(is.null), list(pB, pC))
+  if (!length(bottom_panels)) {
+    message(">> combined_pub: no bottom panels — skipping")
+    return(invisible(NULL))
+  }
+  bottom_row <- patchwork::wrap_plots(bottom_panels, nrow = 1)
+
+  panels_all <- if (!is.null(pA)) list(pA, bottom_row) else list(bottom_row)
+
+  combined <- patchwork::wrap_plots(panels_all, ncol = 1,
+                                    heights = if (!is.null(pA)) c(1.2, 1) else 1) +
+    patchwork::plot_annotation(
+      tag_levels = "A",
+      theme = theme(plot.tag = element_text(size = 12, face = "bold"))
+    )
+
+  n_arms <- max(1, length(arm_levels_bl))
+  pw <- n_arms * 3.2 + 1.8
+  ph <- if (!is.null(pA)) 8.5 else 5.5
+
+  fname <- sprintf("combined_pub_figure_%s.png", TRIAL_UP)
+  ggsave(file.path(figs_dir, fname), combined,
+         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
+  message(">> wrote: ", fname)
+  invisible(combined)
+}
+
+plot_combined_pub(bl)
+
+# =============================================================================
 # Reinfection rank plot — first-rec-only baseline data only
 # =============================================================================
 plot_reinfection_rank <- function(df) {
