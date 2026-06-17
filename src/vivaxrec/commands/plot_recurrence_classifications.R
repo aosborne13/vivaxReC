@@ -1361,28 +1361,101 @@ plot_combined_pub <- function(bl, con) {
   arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
   n_arms     <- length(arm_levels)
 
-  # Shared DCiFER r palette — used by both scatter (B) and dots (C)
-  dcifer_grad <- scale_fill_gradientn(
-    colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-    limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
-    guide    = guide_colourbar(barwidth = 0.8, barheight = 5,
-                               title.position = "top")
+  dcifer_fill <- list(
+    scale_fill_gradientn(
+      colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
+      limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
+      guide    = guide_colourbar(barwidth = 1.2, barheight = 7,
+                                 title.position = "top",
+                                 title.theme = element_text(size = 13, face = "bold"),
+                                 label.theme = element_text(size = 12))
+    )
   )
 
   theme_row <- theme_pub +
-    theme(strip.text        = element_text(face = "bold", size = 9),
+    theme(strip.text        = element_text(face = "bold", size = 10),
           panel.grid.minor  = element_blank(),
           legend.position   = "right",
           axis.title.x      = element_blank(),
           strip.background  = element_blank())
 
-  theme_row_bottom <- theme_row +
-    theme(axis.title.x = element_text())
-
-  # ── Helper: strip arm labels from all but the top row ───────────────────────
   no_strip <- theme(strip.text = element_blank())
 
-  # ── Row A: P(relapse) scatter, coloured by threshold call ───────────────────
+  # ── Row A: DCiFER r scatter ──────────────────────────────────────────────────
+  row_A <- NULL
+  if ("dcifer_r" %in% names(df)) {
+    d_dcf <- df %>% mutate(
+      .y    = suppressWarnings(as.numeric(dcifer_r)),
+      .fill = suppressWarnings(as.numeric(dcifer_r)),
+      treatment_arm = factor(treatment_arm, levels = arm_levels),
+      .day  = suppressWarnings(as.numeric(.data[[day_col]]))
+    ) %>% filter(is.finite(.y), is.finite(.day))
+
+    arm_n_dcf <- d_dcf %>%
+      group_by(treatment_arm) %>%
+      summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
+      mutate(label = sprintf("N=%d (%d indiv)", n_pairs, n_indiv), .y = -Inf, .day = Inf)
+
+    row_A <- ggplot(d_dcf, aes(x = .day, y = .y)) +
+      geom_hline(yintercept = 0.5, linetype = "dotted",
+                 colour = "grey60", linewidth = 0.4, alpha = 0.7) +
+      geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
+                 size = 2.2, stroke = 0.3, alpha = 0.82) +
+      geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
+                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
+      geom_text(data = arm_n_dcf, aes(x = .day, y = .y, label = label),
+                hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
+                inherit.aes = FALSE) +
+      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
+      dcifer_fill +
+      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+      labs(y = "Pairwise relatedness r") +
+      theme_row
+  }
+
+  # ── Row B: connected dots (first rec), fill = Dcifer r, shape = eMOI ─────────
+  rec_col <- if (!is.null(bl) && "recurrence_no" %in% names(df)) "recurrence_no" else NULL
+  df1     <- if (!is.null(rec_col)) df %>% filter(.data[[rec_col]] == 1L) else df
+  pts     <- build_cd_points(df1, day_col = day_col)
+
+  row_B <- NULL
+  if (!is.null(pts) && nrow(pts)) {
+    pts <- pts %>%
+      mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
+
+    # One row per patient per day for connector segments
+    cd_all <- pts %>%
+      group_by(id, day, treatment_arm) %>%
+      summarise(ymin = min(value), ymax = max(value),
+                any_uncertain = any(uncertain), .groups = "drop")
+
+    row_B <- ggplot() +
+      geom_segment(data = cd_all,
+                   aes(x = day, xend = day, y = ymin, yend = ymax,
+                       linetype = any_uncertain),
+                   colour = "grey60", linewidth = 0.7) +
+      scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                            guide = "none") +
+      geom_point(data = pts %>% filter(!is.na(value)),
+                 aes(x = day, y = value, fill = dcifer_r,
+                     alpha = uncertain, shape = shape_lbl),
+                 colour = "grey30", size = 2.8, stroke = 0.3) +
+      dcifer_fill +
+      scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
+      scale_shape_manual(
+        values = MOI_SHAPES, name = "eMOI",
+        guide  = guide_legend(
+          override.aes = list(size = 5, fill = "grey60", colour = "black", stroke = 0.5)
+        )
+      ) +
+      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+      scale_x_continuous(expand = expansion(mult = 0.08)) +
+      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
+      labs(y = "P(relapse)") +
+      theme_row + no_strip
+  }
+
+  # ── Row C: P(relapse) scatter, coloured by classification call ───────────────
   pv3rs_pal <- c(relapse = "#6aa9ff", reinfection = "#2fbf71",
                  indeterminate = "#f08a8a")
 
@@ -1403,7 +1476,7 @@ plot_combined_pub <- function(bl, con) {
     summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
     mutate(label = sprintf("N=%d (%d indiv)", n_pairs, n_indiv), .y = -Inf, .day = Inf)
 
-  row_A <- ggplot(d_pv, aes(x = .day, y = .y)) +
+  row_C <- ggplot(d_pv, aes(x = .day, y = .y)) +
     geom_hline(yintercept = 0.5, linetype = "dotted",
                colour = "grey60", linewidth = 0.4, alpha = 0.7) +
     geom_point(aes(colour = .call), size = 1.8, alpha = 0.72) +
@@ -1413,124 +1486,49 @@ plot_combined_pub <- function(bl, con) {
               hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
               inherit.aes = FALSE) +
     facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
-    scale_colour_manual(values = pv3rs_pal, name = NULL, drop = TRUE,
-                        na.value = "grey70") +
+    scale_colour_manual(
+      values = pv3rs_pal, name = "Classification", drop = TRUE, na.value = "grey70",
+      guide  = guide_legend(
+        override.aes = list(size = 5, shape = 21,
+                            fill = pv3rs_pal,
+                            colour = "black", stroke = 0.5)
+      )
+    ) +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-    labs(y = "P(relapse)") +
-    theme_row + no_strip
+    labs(x = "Days since D0", y = "P(relapse)") +
+    theme_row +
+    theme(axis.title.x = element_text(size = 11),
+          strip.text   = element_blank())
 
-  # ── Row B: DCiFER r scatter, coloured by DCiFER r (fill, same legend as C) ──
-  if ("dcifer_r" %in% names(df)) {
-    d_dcf <- df %>% mutate(
-      .y    = suppressWarnings(as.numeric(dcifer_r)),
-      .fill = suppressWarnings(as.numeric(dcifer_r)),
-      treatment_arm = factor(treatment_arm, levels = arm_levels),
-      .day  = suppressWarnings(as.numeric(.data[[day_col]]))
-    ) %>% filter(is.finite(.y), is.finite(.day))
-
-    arm_n_dcf <- d_dcf %>%
-      group_by(treatment_arm) %>%
-      summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
-      mutate(label = sprintf("N=%d (%d indiv)", n_pairs, n_indiv), .y = -Inf, .day = Inf)
-
-    row_B <- ggplot(d_dcf, aes(x = .day, y = .y)) +
-      geom_hline(yintercept = 0.5, linetype = "dotted",
-                 colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-      geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
-                 size = 2.2, stroke = 0.3, alpha = 0.82) +
-      geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
-                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
-      geom_text(data = arm_n_dcf, aes(x = .day, y = .y, label = label),
-                hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
-                inherit.aes = FALSE) +
-      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
-      scale_fill_gradientn(
-        colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-        limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
-        guide    = guide_colourbar(barwidth = 0.8, barheight = 5,
-                                   title.position = "top")
-      ) +
-      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-      labs(y = "Pairwise relatedness r") +
-      theme_row
-  } else {
-    row_B <- NULL
-  }
-
-  # ── Row C: connected dots, fill = DCiFER r, shape = eMOI ────────────────────
-  rec_col <- if (!is.null(bl) && "recurrence_no" %in% names(df)) "recurrence_no" else NULL
-  df1     <- if (!is.null(rec_col)) df %>% filter(.data[[rec_col]] == 1L) else df
-  pts     <- build_cd_points(df1, day_col = day_col)
-
-  row_C <- NULL
-  if (!is.null(pts) && nrow(pts)) {
-    pts <- pts %>% mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
-
-    arm_plots_C <- lapply(seq_along(arm_levels), function(i) {
-      arm      <- arm_levels[i]
-      pd       <- pts %>% filter(treatment_arm == arm, !is.na(value))
-      if (!nrow(pd)) return(ggplot() + theme_void())
-      n_p      <- dplyr::n_distinct(pd$id)
-      show_leg <- (i == n_arms)
-
-      cd <- pd %>%
-        group_by(id, day) %>%
-        summarise(ymin = min(value), ymax = max(value),
-                  any_uncertain = any(uncertain), .groups = "drop")
-
-      ggplot() +
-        geom_segment(data = cd,
-                     aes(x = day, xend = day, y = ymin, yend = ymax,
-                         linetype = any_uncertain),
-                     colour = "grey60", linewidth = 0.7) +
-        scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
-                              guide = "none") +
-        geom_point(data = pd,
-                   aes(x = day, y = value, fill = dcifer_r,
-                       alpha = uncertain, shape = shape_lbl),
-                   colour = "grey30", size = 2.5, stroke = 0.3) +
-        scale_fill_gradientn(
-          colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-          limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
-          guide    = if (show_leg)
-                       guide_colourbar(barwidth = 0.8, barheight = 4,
-                                       title.position = "top")
-                     else "none"
-        ) +
-        scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
-        scale_shape_manual(values = MOI_SHAPES, name = "eMOI",
-                           guide = if (show_leg) guide_legend() else "none") +
-        scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-        scale_x_continuous(expand = expansion(mult = 0.08)) +
-        labs(x = "Days since D0",
-             y = if (i == 1) "P(relapse)" else NULL) +
-        theme_cd +
-        theme(legend.position  = if (show_leg) "right" else "none",
-              strip.text       = element_blank())
-    })
-    row_C <- patchwork::wrap_plots(arm_plots_C, nrow = 1)
-  }
-
-  # ── Assemble: B (Dcifer r scatter), C (connected dots), A (P(relapse)) ───────
-  rows   <- Filter(Negate(is.null), list(row_B, row_C, row_A))
+  # ── Assemble: A / B / C rows, shared legends collected to right ──────────────
+  rows   <- Filter(Negate(is.null), list(row_A, row_B, row_C))
   n_rows <- length(rows)
   if (!n_rows) { message(">> combined_pub: no panels built — skipping"); return(invisible(NULL)) }
 
   tags <- LETTERS[seq_len(n_rows)]
 
   combined <- patchwork::wrap_plots(rows, ncol = 1, heights = rep(1, n_rows)) +
-    patchwork::plot_layout(guides = "collect") &
-    theme(legend.title     = element_text(size = 13, face = "bold"),
-          legend.text      = element_text(size = 12),
-          legend.key.size  = unit(1.0, "cm"),
-          legend.key.height = unit(1.2, "cm"))
-
-  combined <- combined +
+    patchwork::plot_layout(guides = "collect") +
     patchwork::plot_annotation(
       tag_levels = list(tags),
-      theme = theme(plot.tag = element_text(size = 14, face = "bold",
-                                             margin = margin(r = 4)))
+      theme = theme(
+        plot.tag          = element_text(size = 14, face = "bold", margin = margin(r = 4)),
+        legend.title      = element_text(size = 13, face = "bold"),
+        legend.text       = element_text(size = 12),
+        legend.key.height = unit(1.2, "cm"),
+        legend.key.width  = unit(1.0, "cm")
+      )
     )
+
+  pw <- n_arms * 3.2 + 2.8
+  ph <- n_rows * 3.6
+
+  fname <- sprintf("combined_pub_figure_%s.png", TRIAL_UP)
+  ggsave(file.path(figs_dir, fname), combined,
+         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
+  message(">> wrote: ", fname)
+  invisible(combined)
+}
 
   pw <- n_arms * 3.2 + 2.2
   ph <- n_rows * 3.6
