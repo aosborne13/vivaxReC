@@ -1616,9 +1616,28 @@ plot_combined_posteriors <- function(bl, con) {
     "recrudescence"  = "#e74c3c",
     "low"            = "grey75"
   )
+  # Dummy data for the full 4-entry Pv3Rs legend shown beside row B only
+  pv3rs_legend_df <- data.frame(
+    .cat = factor(c("relapse","reinfection","recrudescence","low"),
+                  levels = c("relapse","reinfection","recrudescence","low")),
+    .x = NA_real_, .y = NA_real_
+  )
+  pv3rs_legend_pal <- c(
+    relapse       = "#6aa9ff",
+    reinfection   = "#2fbf71",
+    recrudescence = "#e74c3c",
+    low           = "grey75"
+  )
+  pv3rs_legend_labels <- c(
+    relapse       = "Relapse p(L) \u22650.5",
+    reinfection   = "Reinfection p(I) \u22650.5",
+    recrudescence = "Recrudescence p(C) \u22650.5",
+    low           = "Posterior prob. <0.5"
+  )
+
   post_legend_guide <- function() {
     guide_legend(
-      title        = "Pv3Rs posterior",
+      title        = "Pv3Rs",
       title.theme  = element_text(size = 13, face = "bold"),
       label.theme  = element_text(size = 12),
       override.aes = list(shape = 21, size = 5, colour = "grey30", stroke = 0.4)
@@ -1655,17 +1674,8 @@ plot_combined_posteriors <- function(bl, con) {
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = if (show_strip) arm_labeller_pv else label_value) +
-      scale_fill_manual(
-        values = post_pal,
-        labels = c(
-          relapse       = "Relapse p(L) \u22650.5",
-          reinfection   = "Reinfection p(I) \u22650.5",
-          recrudescence = "Recrudescence p(C) \u22650.5",
-          low           = "Posterior prob. <0.5"
-        ),
-        name  = "Pv3Rs posterior",
-        guide = if (show_post_legend) post_legend_guide() else "none"
-      ) +
+      # Real fill scale — no legend (legend comes from dummy layer on B)
+      scale_fill_manual(values = post_pal, guide = "none") +
       scale_shape_manual(
         values = MOI_SHAPES, name = "eMOI",
         guide  = if (show_emoi_legend)
@@ -1682,6 +1692,20 @@ plot_combined_posteriors <- function(bl, con) {
       theme_row
     if (!show_strip) p <- p + no_strip
     if (show_xlab)   p <- p + theme(axis.title.x = element_text(size = 12))
+
+    # Add dummy layer for the full Pv3Rs legend on row B only
+    if (show_post_legend) {
+      p <- p +
+        geom_point(data = pv3rs_legend_df,
+                   aes(x = .x, y = .y, fill = .cat),
+                   shape = 21, size = 0, colour = NA, inherit.aes = FALSE) +
+        scale_fill_manual(
+          values = pv3rs_legend_pal,
+          labels = pv3rs_legend_labels,
+          name   = "Pv3Rs",
+          guide  = post_legend_guide()
+        )
+    }
     p
   }
 
@@ -1711,15 +1735,52 @@ plot_combined_posteriors <- function(bl, con) {
   }
 
   # ── Rows B, C, D: raw posteriors with eMOI shape ─────────────────────────────
-  row_B <- build_posterior_row("pv3rs_L", "p(L)  relapse",       "relapse",
+  # The Pv3Rs legend (all 4 entries) and eMOI legend appear on row B only.
+  # Rows C and D show eMOI shape only (no fill legend — same palette explained in B).
+
+  # Dummy data for the full Pv3Rs legend — ensures all 4 entries always appear
+  pv3rs_legend_df <- tibble::tibble(
+    .label = factor(c("relapse","reinfection","recrudescence","low"),
+                    levels = c("relapse","reinfection","recrudescence","low")),
+    .x = NA_real_, .y = NA_real_
+  )
+
+  row_B <- build_posterior_row("pv3rs_L", "p(L)  relapse", "relapse",
                                show_strip = FALSE, show_xlab = FALSE,
                                show_post_legend = TRUE, show_emoi_legend = TRUE)
-  row_C <- build_posterior_row("pv3rs_I", "p(I)  reinfection",   "reinfection",
+
+  if (!is.null(row_B)) {
+    row_B <- row_B +
+      geom_point(data = pv3rs_legend_df,
+                 aes(x = .x, y = .y, fill = .label),
+                 shape = 21, colour = "grey30", size = 5, stroke = 0.4,
+                 inherit.aes = FALSE, na.rm = TRUE) +
+      scale_fill_manual(
+        values = c(relapse       = "#6aa9ff",
+                   reinfection   = "#2fbf71",
+                   recrudescence = "#e74c3c",
+                   low           = "grey75"),
+        labels = c(relapse       = "Relapse p(L) \u22650.5",
+                   reinfection   = "Reinfection p(I) \u22650.5",
+                   recrudescence = "Recrudescence p(C) \u22650.5",
+                   low           = "Posterior prob. <0.5"),
+        name   = "Pv3Rs",
+        drop   = FALSE,
+        guide  = guide_legend(
+          title.theme  = element_text(size = 13, face = "bold"),
+          label.theme  = element_text(size = 12),
+          override.aes = list(shape = 21, size = 5,
+                              colour = "grey30", stroke = 0.4)
+        )
+      )
+  }
+
+  row_C <- build_posterior_row("pv3rs_I", "p(I)  reinfection", "reinfection",
                                show_strip = FALSE, show_xlab = FALSE,
-                               show_post_legend = FALSE, show_emoi_legend = TRUE)
+                               show_post_legend = FALSE, show_emoi_legend = FALSE)
   row_D <- build_posterior_row("pv3rs_C", "p(C)  recrudescence", "recrudescence",
                                show_strip = FALSE, show_xlab = FALSE,
-                               show_post_legend = FALSE, show_emoi_legend = TRUE)
+                               show_post_legend = FALSE, show_emoi_legend = FALSE)
 
   # ── Row E: P(L) threshold classification ─────────────────────────────────────
   pv3rs_pal_E    <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
@@ -1764,7 +1825,7 @@ plot_combined_posteriors <- function(bl, con) {
     ) +
     scale_shape_manual(values = pv3rs_shapes_E, guide = "none") +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-    labs(x = "Days since D0", y = "p(L)  classification") +
+    labs(x = "Days since D0", y = "Classification") +
     theme_row + no_strip +
     theme(axis.title.x = element_text(size = 12))
 
