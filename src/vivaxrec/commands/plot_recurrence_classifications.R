@@ -1556,7 +1556,6 @@ plot_combined_pub <- function(bl, con) {
     patchwork::plot_annotation(
       tag_levels = list(tags),
       theme = theme(
-        plot.tag          = element_text(size = 20, face = "bold", margin = margin(r = 6)),
         legend.title      = element_text(size = 13, face = "bold"),
         legend.text       = element_text(size = 12),
         legend.key.height = unit(1.2, "cm"),
@@ -1564,12 +1563,17 @@ plot_combined_pub <- function(bl, con) {
       )
     )
 
+  # Apply tag styling via & to ensure it takes effect across all patchwork versions
+  combined <- combined &
+    theme(plot.tag = element_text(size = 22, face = "bold",
+                                  margin = margin(r = 8, b = 4)))
+
   pw <- n_arms * 3.2 + 2.8
   ph <- n_rows * 3.6
 
   fname <- sprintf("combined_pub_figure_%s.png", TRIAL_UP)
   ggsave(file.path(figs_dir, fname), combined,
-         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
+         width = pw, height = ph, dpi = 600, bg = "white", limitsize = FALSE)
   message(">> wrote: ", fname)
   invisible(combined)
 }
