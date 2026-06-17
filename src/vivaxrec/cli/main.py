@@ -177,6 +177,9 @@ Options:
   --master_dir  DIR   Directory containing <trial>/master_samples.tsv (from prep step)
   --trial       STR   Trial name for labelling
   --out_dir     DIR   Output directory for summary TSVs (default: same as input)
+  --mono_emoi_th FLOAT  eMOI threshold for monoclonal D0 denominator (default: 1.1)
+  --d0_by_sample      Count D0 denominator by unique sample_id rather than patient_id
+                      (non-default; use if multiple D0 samples per patient should each count separately)
 
 Example:
   vivaxrec summarise \\
