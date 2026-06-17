@@ -1616,18 +1616,14 @@ plot_combined_posteriors <- function(bl, con) {
     "recrudescence"  = "#e74c3c",
     "low"            = "grey75"
   )
-  post_legend <- guide_legend(
-    title        = "Pv3Rs posterior",
-    title.theme  = element_text(size = 13, face = "bold"),
-    label.theme  = element_text(size = 12),
-    override.aes = list(
-      shape  = c(21L, 21L, 21L, 21L),
-      size   = c(5, 5, 5, 5),
-      fill   = c("#6aa9ff", "#2fbf71", "#e74c3c", "grey75"),
-      colour = rep("grey30", 4),
-      stroke = rep(0.4, 4)
+  post_legend_guide <- function() {
+    guide_legend(
+      title        = "Pv3Rs posterior",
+      title.theme  = element_text(size = 13, face = "bold"),
+      label.theme  = element_text(size = 12),
+      override.aes = list(shape = 21, size = 5, colour = "grey30", stroke = 0.4)
     )
-  )
+  }
 
   # ── Helper: posterior scatter row with eMOI shape ────────────────────────────
   build_posterior_row <- function(post_col, y_label, high_fill_name,
@@ -1668,7 +1664,7 @@ plot_combined_posteriors <- function(bl, con) {
           low           = "Posterior prob. <0.5"
         ),
         name  = "Pv3Rs posterior",
-        guide = if (show_post_legend) post_legend else "none"
+        guide = if (show_post_legend) post_legend_guide() else "none"
       ) +
       scale_shape_manual(
         values = MOI_SHAPES, name = "eMOI",
