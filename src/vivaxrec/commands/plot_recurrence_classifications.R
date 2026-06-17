@@ -1372,12 +1372,12 @@ plot_combined_pub <- function(bl, con) {
     )
   )
 
-  # Add N to arm strip labels
+  # Strip labels: arm name on line 1, N=pairs (N indiv) on line 2
   arm_n_strip <- df %>%
     mutate(treatment_arm = factor(treatment_arm, levels = arm_levels)) %>%
     group_by(treatment_arm) %>%
-    summarise(n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
-    mutate(label = sprintf("%s  (N=%d)", treatment_arm, n_indiv))
+    summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
+    mutate(label = sprintf("%s\n%d pairs, %d individuals", treatment_arm, n_pairs, n_indiv))
   arm_label_map <- setNames(arm_n_strip$label, arm_n_strip$treatment_arm)
   arm_labeller  <- as_labeller(arm_label_map)
 
@@ -1441,6 +1441,13 @@ plot_combined_pub <- function(bl, con) {
       summarise(ymin = min(value), ymax = max(value),
                 any_uncertain = any(uncertain), .groups = "drop")
 
+    # N label: "N pairs, N indiv" on two lines under the strip
+    arm_n_dots <- pts %>%
+      group_by(treatment_arm) %>%
+      summarise(n_pts = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
+      mutate(label = sprintf("%d points\n%d individuals", n_pts, n_indiv),
+             .y = -Inf, .day = Inf)
+
     row_B <- ggplot() +
       geom_segment(data = cd_all,
                    aes(x = day, xend = day, y = ymin, yend = ymax,
@@ -1448,15 +1455,26 @@ plot_combined_pub <- function(bl, con) {
                    colour = "grey60", linewidth = 0.7) +
       scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
                             guide = "none") +
+      geom_smooth(data = pts %>% filter(!is.na(value), is.finite(day), is.finite(value)),
+                  aes(x = day, y = value, group = treatment_arm),
+                  method = "loess", formula = y ~ x, se = TRUE,
+                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22,
+                  inherit.aes = FALSE) +
       geom_point(data = pts %>% filter(!is.na(value)),
                  aes(x = day, y = value, fill = dcifer_r,
                      alpha = uncertain, shape = shape_lbl),
                  colour = "grey30", size = 3.2, stroke = 0.3) +
+      geom_text(data = arm_n_dots,
+                aes(x = .day, y = .y, label = label),
+                hjust = 1.1, vjust = -0.2, size = 2.2, colour = "grey45",
+                inherit.aes = FALSE) +
       dcifer_fill +
       scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
       scale_shape_manual(
         values = MOI_SHAPES, name = "eMOI",
         guide  = guide_legend(
+          title.theme  = element_text(size = 13, face = "bold"),
+          label.theme  = element_text(size = 12),
           override.aes = list(size = 5, fill = "grey60", colour = "black", stroke = 0.5)
         )
       ) +
@@ -1467,18 +1485,18 @@ plot_combined_pub <- function(bl, con) {
       theme_row + no_strip
   }
 
-  # ── Row C: P(relapse) scatter, coloured by classification call ───────────────
-  pv3rs_pal <- c(relapse = "#6aa9ff", reinfection = "#2fbf71",
-                 indeterminate = "#f08a8a")
+  # ── Row C: P(relapse) scatter — relapse/reinfection = filled circles, indeterminate = red X
+  pv3rs_pal    <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
+  pv3rs_shapes <- c(relapse = 21L,       reinfection = 21L,       indeterminate = 4L)
 
   d_pv <- df %>% mutate(
     .y    = suppressWarnings(as.numeric(pv3rs_L)),
-    .call = dplyr::case_when(
+    .call = factor(dplyr::case_when(
       !is.finite(suppressWarnings(as.numeric(pv3rs_L))) ~ "indeterminate",
       suppressWarnings(as.numeric(pv3rs_L)) >= 0.75     ~ "relapse",
       suppressWarnings(as.numeric(pv3rs_L)) <= 0.25     ~ "reinfection",
       TRUE                                               ~ "indeterminate"
-    ),
+    ), levels = c("relapse","reinfection","indeterminate")),
     treatment_arm = factor(treatment_arm, levels = arm_levels),
     .day = suppressWarnings(as.numeric(.data[[day_col]]))
   ) %>% filter(is.finite(.y), is.finite(.day))
@@ -1491,21 +1509,35 @@ plot_combined_pub <- function(bl, con) {
   row_C <- ggplot(d_pv, aes(x = .day, y = .y)) +
     geom_hline(yintercept = 0.5, linetype = "dotted",
                colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-    geom_point(aes(colour = .call), size = 2.5, alpha = 0.72) +
-    geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
-                colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
+    geom_smooth(data = d_pv %>% filter(.call != "indeterminate"),
+                aes(x = .day, y = .y),
+                method = "loess", formula = y ~ x, se = TRUE,
+                colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22,
+                inherit.aes = FALSE) +
+    geom_point(aes(colour = .call, fill = .call, shape = .call),
+               size = 2.5, alpha = 0.82, stroke = 0.9) +
     geom_text(data = arm_n_pv, aes(x = .day, y = .y, label = label),
               hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
               inherit.aes = FALSE) +
     facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
-    scale_colour_manual(
-      values = pv3rs_pal, name = "Classification", drop = TRUE, na.value = "grey70",
+    scale_colour_manual(values = c(relapse = "#3a86c8", reinfection = "#1e8c4a",
+                                   indeterminate = "#e74c3c"),
+                        guide = "none") +
+    scale_fill_manual(
+      values = pv3rs_pal, name = "Classification", drop = FALSE, na.value = "grey70",
       guide  = guide_legend(
-        override.aes = list(size = 5, shape = 21,
-                            fill = pv3rs_pal,
-                            colour = "black", stroke = 0.5)
+        title.theme  = element_text(size = 13, face = "bold"),
+        label.theme  = element_text(size = 12),
+        override.aes = list(
+          shape  = c(21L, 21L, 4L),
+          size   = c(5, 5, 5),
+          fill   = c("#6aa9ff", "#2fbf71", NA),
+          colour = c("#3a86c8", "#1e8c4a", "#e74c3c"),
+          stroke = c(0.5, 0.5, 1.5)
+        )
       )
     ) +
+    scale_shape_manual(values = pv3rs_shapes, guide = "none") +
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
     labs(x = "Days since D0", y = "P(relapse)") +
     theme_row +
@@ -1524,7 +1556,7 @@ plot_combined_pub <- function(bl, con) {
     patchwork::plot_annotation(
       tag_levels = list(tags),
       theme = theme(
-        plot.tag          = element_text(size = 18, face = "bold", margin = margin(r = 6)),
+        plot.tag          = element_text(size = 20, face = "bold", margin = margin(r = 6)),
         legend.title      = element_text(size = 13, face = "bold"),
         legend.text       = element_text(size = 12),
         legend.key.height = unit(1.2, "cm"),
