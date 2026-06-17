@@ -1361,15 +1361,13 @@ plot_combined_pub <- function(bl, con) {
   arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
   n_arms     <- length(arm_levels)
 
-  dcifer_fill <- list(
-    scale_fill_gradientn(
-      colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
-      limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
-      guide    = guide_colourbar(barwidth = 1.2, barheight = 7,
-                                 title.position = "top",
-                                 title.theme = element_text(size = 13, face = "bold"),
-                                 label.theme = element_text(size = 12))
-    )
+  dcifer_fill <- scale_fill_gradientn(
+    colours  = c("#deebf7","#9ecae1","#3182bd","#08519c"),
+    limits   = c(0, 1), name = "Dcifer r", na.value = "grey70",
+    guide    = guide_colourbar(barwidth = 1.2, barheight = 7,
+                               title.position = "top",
+                               title.theme = element_text(size = 13, face = "bold"),
+                               label.theme = element_text(size = 12))
   )
 
   # Strip labels: arm name on line 1, N=pairs (N indiv) on line 2
