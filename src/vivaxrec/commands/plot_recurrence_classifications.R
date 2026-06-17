@@ -1408,6 +1408,13 @@ plot_combined_pub <- function(bl, con) {
       .day  = suppressWarnings(as.numeric(.data[[day_col]]))
     ) %>% filter(is.finite(.y), is.finite(.day))
 
+    row_A <- ggplot(d_dcf, aes(x = .day, y = .y)) +
+      geom_hline(yintercept = 0.5, linetype = "dotted",
+                 colour = "grey60", linewidth = 0.4, alpha = 0.7) +
+      geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
+                 size = 2.8, stroke = 0.3, alpha = 0.82) +
+      geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
+                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
                  labeller = arm_labeller_A) +
       dcifer_fill +
@@ -1424,12 +1431,23 @@ plot_combined_pub <- function(bl, con) {
     pts <- pts %>%
       mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
 
-    # One row per patient per day for connector segments
     cd_all <- pts %>%
       group_by(id, day, treatment_arm) %>%
       summarise(ymin = min(value), ymax = max(value),
                 any_uncertain = any(uncertain), .groups = "drop")
 
+    row_B <- ggplot() +
+      geom_segment(data = cd_all,
+                   aes(x = day, xend = day, y = ymin, yend = ymax,
+                       linetype = any_uncertain),
+                   colour = "grey60", linewidth = 0.7) +
+      scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                            guide = "none") +
+      geom_smooth(data = pts %>% filter(!is.na(value), is.finite(day), is.finite(value)),
+                  aes(x = day, y = value, group = treatment_arm),
+                  method = "loess", formula = y ~ x, se = TRUE,
+                  colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22,
+                  inherit.aes = FALSE) +
       geom_point(data = pts %>% filter(!is.na(value)),
                  aes(x = day, y = value, fill = dcifer_r,
                      alpha = uncertain, shape = shape_lbl),
