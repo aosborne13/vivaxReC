@@ -1372,11 +1372,22 @@ plot_combined_pub <- function(bl, con) {
     )
   )
 
+  # Add N to arm strip labels
+  arm_n_strip <- df %>%
+    mutate(treatment_arm = factor(treatment_arm, levels = arm_levels)) %>%
+    group_by(treatment_arm) %>%
+    summarise(n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
+    mutate(label = sprintf("%s  (N=%d)", treatment_arm, n_indiv))
+  arm_label_map <- setNames(arm_n_strip$label, arm_n_strip$treatment_arm)
+  arm_labeller  <- as_labeller(arm_label_map)
+
   theme_row <- theme_pub +
-    theme(strip.text        = element_text(face = "bold", size = 10),
+    theme(strip.text        = element_text(face = "bold", size = 12),
           panel.grid.minor  = element_blank(),
           legend.position   = "right",
           axis.title.x      = element_blank(),
+          axis.title.y      = element_text(size = 12),
+          axis.text         = element_text(size = 11),
           strip.background  = element_blank())
 
   no_strip <- theme(strip.text = element_blank())
@@ -1400,16 +1411,17 @@ plot_combined_pub <- function(bl, con) {
       geom_hline(yintercept = 0.5, linetype = "dotted",
                  colour = "grey60", linewidth = 0.4, alpha = 0.7) +
       geom_point(aes(fill = .fill), shape = 21, colour = "grey30",
-                 size = 2.2, stroke = 0.3, alpha = 0.82) +
+                 size = 2.8, stroke = 0.3, alpha = 0.82) +
       geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                   colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
       geom_text(data = arm_n_dcf, aes(x = .day, y = .y, label = label),
                 hjust = 1.05, vjust = -0.4, size = 2.2, colour = "grey45",
                 inherit.aes = FALSE) +
-      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed") +
+      facet_wrap(~treatment_arm, nrow = 1, scales = "fixed",
+                 labeller = arm_labeller) +
       dcifer_fill +
       scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-      labs(y = "Pairwise relatedness r") +
+      labs(y = "Pairwise Relatedness") +
       theme_row
   }
 
@@ -1439,7 +1451,7 @@ plot_combined_pub <- function(bl, con) {
       geom_point(data = pts %>% filter(!is.na(value)),
                  aes(x = day, y = value, fill = dcifer_r,
                      alpha = uncertain, shape = shape_lbl),
-                 colour = "grey30", size = 2.8, stroke = 0.3) +
+                 colour = "grey30", size = 3.2, stroke = 0.3) +
       dcifer_fill +
       scale_alpha_manual(values = c("FALSE" = 0.85, "TRUE" = 0.35), guide = "none") +
       scale_shape_manual(
@@ -1479,7 +1491,7 @@ plot_combined_pub <- function(bl, con) {
   row_C <- ggplot(d_pv, aes(x = .day, y = .y)) +
     geom_hline(yintercept = 0.5, linetype = "dotted",
                colour = "grey60", linewidth = 0.4, alpha = 0.7) +
-    geom_point(aes(colour = .call), size = 1.8, alpha = 0.72) +
+    geom_point(aes(colour = .call), size = 2.5, alpha = 0.72) +
     geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                 colour = "grey30", fill = "grey80", linewidth = 0.7, alpha = 0.22) +
     geom_text(data = arm_n_pv, aes(x = .day, y = .y, label = label),
@@ -1497,7 +1509,7 @@ plot_combined_pub <- function(bl, con) {
     scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
     labs(x = "Days since D0", y = "P(relapse)") +
     theme_row +
-    theme(axis.title.x = element_text(size = 11),
+    theme(axis.title.x = element_text(size = 12),
           strip.text   = element_blank())
 
   # ── Assemble: A / B / C rows, shared legends collected to right ──────────────
@@ -1512,7 +1524,7 @@ plot_combined_pub <- function(bl, con) {
     patchwork::plot_annotation(
       tag_levels = list(tags),
       theme = theme(
-        plot.tag          = element_text(size = 14, face = "bold", margin = margin(r = 4)),
+        plot.tag          = element_text(size = 18, face = "bold", margin = margin(r = 6)),
         legend.title      = element_text(size = 13, face = "bold"),
         legend.text       = element_text(size = 12),
         legend.key.height = unit(1.2, "cm"),
