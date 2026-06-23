@@ -1932,11 +1932,11 @@ plot_patient_timelines <- function(con, min_steps = 2L) {
       scale_colour_manual(
         values = step_pal, labels = step_labels,
         name   = "Classification",
+        drop   = FALSE,
         guide  = guide_legend(
           title.theme  = element_text(size = 11, face = "bold"),
           label.theme  = element_text(size = 10),
-          override.aes = list(linewidth = 2, shape = NA,
-                              linetype = c("solid","solid","dashed"))
+          override.aes = list(linewidth = 2, shape = NA)
         )
       ) +
       scale_linetype_manual(values = step_lty, guide = "none") +
