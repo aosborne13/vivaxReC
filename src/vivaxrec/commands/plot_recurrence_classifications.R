@@ -1811,6 +1811,198 @@ plot_combined_posteriors <- function(bl, con) {
 plot_combined_posteriors(bl, con)
 
 # =============================================================================
+# Patient trajectory timeline
+# Each row = one patient. Line segments connect consecutive infections,
+# coloured by Pv3Rs classification of that step (P(L) threshold framework).
+# Node shape = eMOI category. Faceted by treatment arm.
+# Filters to patients with >= min_steps consecutive steps.
+# =============================================================================
+plot_patient_timelines <- function(con, min_steps = 2L) {
+  if (is.null(con)) {
+    message(">> patient_timelines: no consecutive data — skipping")
+    return(invisible(NULL))
+  }
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message(">> patchwork required for patient timelines — skipping")
+    return(invisible(NULL))
+  }
+  if (!all(c("from_day","to_day","pv3rs_L","id","treatment_arm") %in% names(con))) {
+    message(">> patient_timelines: missing required columns — skipping")
+    return(invisible(NULL))
+  }
+
+  df <- con %>%
+    mutate(
+      pv3rs_L   = suppressWarnings(as.numeric(pv3rs_L)),
+      from_day  = suppressWarnings(as.numeric(from_day)),
+      to_day    = suppressWarnings(as.numeric(to_day)),
+      emoi_s1   = suppressWarnings(as.numeric(emoi_s1)),
+      emoi_s2   = suppressWarnings(as.numeric(emoi_s2)),
+      # Classification of this step's edge
+      step_call = dplyr::case_when(
+        is.na(pv3rs_L)    ~ "indeterminate",
+        pv3rs_L >= 0.75   ~ "relapse",
+        pv3rs_L <= 0.25   ~ "reinfection",
+        TRUE              ~ "indeterminate"
+      ),
+      # eMOI category for each node
+      shape_s1 = dplyr::case_when(
+        is.na(emoi_s1)   ~ "unknown",
+        emoi_s1 <= 1.1   ~ "monoclonal",
+        TRUE             ~ "polyclonal"
+      ),
+      shape_s2 = dplyr::case_when(
+        is.na(emoi_s2)   ~ "unknown",
+        emoi_s2 <= 1.1   ~ "monoclonal",
+        TRUE             ~ "polyclonal"
+      )
+    ) %>%
+    filter(is.finite(from_day), is.finite(to_day))
+
+  # Filter to patients with >= min_steps steps
+  step_counts <- df %>%
+    group_by(id) %>%
+    summarise(n = dplyr::n(), .groups = "drop") %>%
+    filter(n >= min_steps)
+
+  df <- df %>% filter(id %in% step_counts$id)
+  if (!nrow(df)) {
+    message(sprintf(">> patient_timelines: no patients with >= %d steps — skipping", min_steps))
+    return(invisible(NULL))
+  }
+
+  arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
+
+  # Colour palette for step classification
+  step_pal <- c(
+    relapse       = "#6aa9ff",
+    reinfection   = "#2fbf71",
+    indeterminate = "#e74c3c"
+  )
+  step_labels <- c(
+    relapse       = "Relapse  p(L) \u22650.75",
+    reinfection   = "Reinfection  p(L) \u22640.25",
+    indeterminate = "Indeterminate"
+  )
+  step_lty <- c(
+    relapse       = "solid",
+    reinfection   = "solid",
+    indeterminate = "dashed"
+  )
+
+  # Build one panel per arm
+  arm_plots <- lapply(arm_levels, function(arm) {
+    d <- df %>%
+      filter(treatment_arm == arm) %>%
+      mutate(step_call = factor(step_call, levels = c("relapse","reinfection","indeterminate")))
+
+    # Patient ordering: sort by first infection day, then last
+    pat_order <- d %>%
+      group_by(id) %>%
+      summarise(first = min(from_day), last = max(to_day), .groups = "drop") %>%
+      arrange(desc(last), desc(first)) %>%
+      pull(id)
+    d <- d %>% mutate(id = factor(id, levels = pat_order))
+
+    # From-nodes (s1): one row per step
+    nodes_from <- d %>%
+      transmute(id, day = from_day, shape_lbl = shape_s1) %>%
+      distinct()
+    # To-nodes (s2)
+    nodes_to <- d %>%
+      transmute(id, day = to_day, shape_lbl = shape_s2) %>%
+      distinct()
+    nodes <- bind_rows(nodes_from, nodes_to) %>%
+      distinct(id, day, .keep_all = TRUE) %>%
+      mutate(shape_lbl = factor(shape_lbl, levels = c("monoclonal","polyclonal","unknown")))
+
+    n_pts <- dplyr::n_distinct(d$id)
+
+    ggplot() +
+      geom_segment(data = d,
+                   aes(x = from_day, xend = to_day,
+                       y = id,       yend = id,
+                       colour   = step_call,
+                       linetype = step_call),
+                   linewidth = 1.2, lineend = "round") +
+      geom_point(data = nodes,
+                 aes(x = day, y = id, shape = shape_lbl),
+                 fill = "white", colour = "grey30",
+                 size = 2.5, stroke = 0.7) +
+      scale_colour_manual(
+        values = step_pal, labels = step_labels,
+        name   = "Classification",
+        guide  = guide_legend(
+          title.theme  = element_text(size = 11, face = "bold"),
+          label.theme  = element_text(size = 10),
+          override.aes = list(linewidth = 2, shape = NA,
+                              linetype = c("solid","solid","dashed"))
+        )
+      ) +
+      scale_linetype_manual(values = step_lty, guide = "none") +
+      scale_shape_manual(
+        values = c(monoclonal = 21L, polyclonal = 24L, unknown = 23L),
+        name   = "eMOI",
+        guide  = guide_legend(
+          title.theme  = element_text(size = 11, face = "bold"),
+          label.theme  = element_text(size = 10),
+          override.aes = list(size = 3, fill = "white", colour = "grey30")
+        )
+      ) +
+      scale_x_continuous(
+        name   = if (arm == arm_levels[length(arm_levels)]) "Days since D0" else NULL,
+        expand = expansion(mult = 0.05)
+      ) +
+      labs(title = sprintf("%s  (N=%d)", arm, n_pts)) +
+      theme_pub +
+      theme(
+        axis.title.y    = element_blank(),
+        axis.text.y     = element_text(size = 7),
+        plot.title      = element_text(size = 11, face = "bold"),
+        panel.grid.major.y = element_line(colour = "grey93", linewidth = 0.3),
+        panel.grid.major.x = element_line(colour = "grey88", linewidth = 0.3),
+        panel.grid.minor   = element_blank(),
+        legend.position = "none"
+      )
+  })
+
+  # Add legend to the last panel
+  arm_plots[[length(arm_plots)]] <- arm_plots[[length(arm_plots)]] +
+    theme(legend.position = "right")
+
+  # Stack arms vertically, proportional to patient count
+  n_per_arm <- df %>%
+    group_by(treatment_arm) %>%
+    summarise(n = dplyr::n_distinct(id), .groups = "drop") %>%
+    arrange(match(treatment_arm, arm_levels)) %>%
+    pull(n)
+  heights <- pmax(n_per_arm, 1)
+
+  combined <- patchwork::wrap_plots(arm_plots, ncol = 1, heights = heights) +
+    patchwork::plot_annotation(
+      title = sprintf("%s — Patient recurrence trajectories (consecutive pairs)", TRIAL_UP),
+      subtitle = sprintf(
+        "Each row = one patient | Line colour = Pv3Rs classification | Shape = eMOI | min. %d steps",
+        min_steps),
+      theme = theme(
+        plot.title    = element_text(size = 13, face = "bold"),
+        plot.subtitle = element_text(size = 9,  colour = "grey40")
+      )
+    )
+
+  pw <- 8
+  ph <- max(6, sum(heights) * 0.35 + 2)
+
+  fname <- sprintf("patient_timelines_%s.png", TRIAL_UP)
+  ggsave(file.path(figs_dir, fname), combined,
+         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
+  message(">> wrote: ", fname)
+  invisible(combined)
+}
+
+plot_patient_timelines(con, min_steps = 2L)
+
+# =============================================================================
 # Reinfection rank plot — first-rec-only baseline data only
 # =============================================================================
 plot_reinfection_rank <- function(df) {
