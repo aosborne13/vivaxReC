@@ -184,8 +184,9 @@ Three analyses are produced:
 
 Options:
   --bl_dir      DIR    Baseline classification output directory
-  --con_dir     DIR    Consecutive classification output directory
-  --out_dir     DIR    Output directory (default: same as input)
+  --con_dir     DIR    Consecutive classification output directory (required)
+  --out_dir     DIR    Output directory (default: same as con_dir)
+  --master_dir  DIR    Directory containing <trial>/master_samples.tsv (for no-recurrence counts)
   --trial       STR    Trial name for labelling
   --rel_thresh  FLOAT  P(L) threshold for relapse (default: 0.75)
   --rei_thresh  FLOAT  P(L) threshold for reinfection (default: 0.25)
