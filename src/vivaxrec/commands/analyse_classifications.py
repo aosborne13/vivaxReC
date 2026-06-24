@@ -63,6 +63,8 @@ def parse_args():
     p.add_argument("--rei_thresh", default=0.25, type=float)
     p.add_argument("--r_thresh",   default=0.95, type=float)
     p.add_argument("--day_thresh", default=300,  type=int)
+    p.add_argument("--pq_arms",    default=None, nargs="+",
+                   help="PQ treatment arm name(s) e.g. --pq_arms '7-day' '14-day'")
     return p.parse_args()
 
 
@@ -249,7 +251,8 @@ def build_patient_trajectories(df, args, table_type):
 # =============================================================================
 # Narrative summary
 # =============================================================================
-def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir, d0_counts=None):
+def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
+                            d0_counts=None, pq_arms=None):
     """
     Write a plain-English narrative summary of key findings per treatment arm,
     suitable for use as draft manuscript text.
@@ -394,42 +397,80 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
 
     # ── Overall summary ───────────────────────────────────────────────────────
     h("OVERALL SUMMARY")
-    n_tot         = len(pat_traj)
-    n_rel_tot     = (pat_traj["n_relapse"] >= 1).sum()
-    n_rei_tot     = (pat_traj["n_reinfection"] >= 1).sum()
-    n_mix_tot     = pat_traj["mixed_trajectory"].sum()
-    n_all_rel_tot = pat_traj["all_relapse"].sum()
-    n_pairs_tot   = int(pat_traj["n_recurrences"].sum())
-    n_pairs_rel_tot = int(pat_traj["n_relapse"].sum())
-    n_pairs_rei_tot = int(pat_traj["n_reinfection"].sum())
-    n_pairs_unc_tot = int(pat_traj["n_uncertain"].sum()) if "n_uncertain" in pat_traj.columns else 0
 
-    p(f"PATIENT-LEVEL:")
+    pq_arms_lower = [a.lower() for a in (pq_arms or [])]
+
+    def arm_group_summary(label, subset_arms):
+        tp_g = pat_traj[pat_traj["treatment_arm"].isin(subset_arms)]
+        if not len(tp_g):
+            return
+        n_tot_g       = len(tp_g)
+        n_rel_g       = (tp_g["n_relapse"] >= 1).sum()
+        n_rei_g       = (tp_g["n_reinfection"] >= 1).sum()
+        n_mix_g       = tp_g["mixed_trajectory"].sum()
+        n_all_rel_g   = tp_g["all_relapse"].sum()
+        n_pairs_rel_g = int(tp_g["n_relapse"].sum())
+        n_pairs_rei_g = int(tp_g["n_reinfection"].sum())
+        n_pairs_unc_g = int(tp_g["n_uncertain"].sum()) if "n_uncertain" in tp_g.columns else 0
+        n_pairs_g     = int(tp_g["n_recurrences"].sum())
+
+        p(f"\n{label} ({', '.join(sorted(subset_arms))}):")
+        if d0_counts:
+            n_d0_g   = sum(d0_counts.get(
+                next((k for k in d0_counts if k.lower() == a.lower()), a), 0)
+                for a in subset_arms)
+            n_no_g   = max(0, n_d0_g - n_tot_g)
+            p(f"  D0 genotyped:                   {n_d0_g}")
+            p(f"  No recurrence / unclassified:   {n_no_g} "
+              f"({100*n_no_g/max(n_d0_g,1):.1f}%)")
+            p(f"  With classified pair:           {n_tot_g} "
+              f"({100*n_tot_g/max(n_d0_g,1):.1f}%)")
+            p(f"  Any relapse [of D0 genotyped]:  {n_rel_g} "
+              f"({100*n_rel_g/max(n_d0_g,1):.1f}%)")
+            p(f"  Any reinfection [of D0]:        {n_rei_g} "
+              f"({100*n_rei_g/max(n_d0_g,1):.1f}%)")
+        else:
+            p(f"  Patients with classified pair:  {n_tot_g}")
+            p(f"  Any relapse:                    {n_rel_g} "
+              f"({100*n_rel_g/max(n_tot_g,1):.1f}%)")
+            p(f"  Any reinfection:                {n_rei_g} "
+              f"({100*n_rei_g/max(n_tot_g,1):.1f}%)")
+        p(f"  Mixed trajectory:               {n_mix_g} "
+          f"({100*n_mix_g/max(n_tot_g,1):.1f}%)")
+        p(f"  Pure relapse (all steps):       {n_all_rel_g} "
+          f"({100*n_all_rel_g/max(n_tot_g,1):.1f}%)")
+        p(f"  PAIR-LEVEL — total pairs:       {n_pairs_g}")
+        p(f"    Relapse:                      {n_pairs_rel_g} "
+          f"({100*n_pairs_rel_g/max(n_pairs_g,1):.1f}%)")
+        p(f"    Reinfection:                  {n_pairs_rei_g} "
+          f"({100*n_pairs_rei_g/max(n_pairs_g,1):.1f}%)")
+        p(f"    Indeterminate:                {n_pairs_unc_g} "
+          f"({100*n_pairs_unc_g/max(n_pairs_g,1):.1f}%)")
+        if pat_sc is not None:
+            sc_g  = pat_sc[pat_sc["treatment_arm"].isin(subset_arms)]
+            n_sc_g = sc_g["has_same_clone_relapse"].sum() if len(sc_g) else 0
+            p(f"  Same-clone relapses:            {n_sc_g} "
+              f"({100*n_sc_g/max(n_tot_g,1):.1f}%)")
+        if pat_lr is not None:
+            lr_g  = pat_lr[pat_lr["treatment_arm"].isin(subset_arms)]
+            n_ex_g = int((lr_g["day"] > args.day_thresh).sum()) if len(lr_g) else 0
+            p(f"  Relapses > day {args.day_thresh}:          {n_ex_g}")
+
+    all_arms     = sorted(pat_traj["treatment_arm"].dropna().unique())
+    pq_arm_set   = {a for a in all_arms if a.lower() in pq_arms_lower}
+    nonpq_arm_set = {a for a in all_arms if a.lower() not in pq_arms_lower}
+
+    if pq_arms and pq_arm_set:
+        arm_group_summary("NON-PQ ARMS", nonpq_arm_set)
+        arm_group_summary("PQ ARMS", pq_arm_set)
+    else:
+        arm_group_summary("ALL ARMS", set(all_arms))
+
     if d0_counts:
-        n_d0_total = sum(d0_counts.values())
-        n_no_rec_total = max(0, n_d0_total - n_tot)
-        p(f"  Total D0 genotyped:               {n_d0_total}")
-        p(f"  No recurrence / unclassified:     {n_no_rec_total} "
-          f"({100*n_no_rec_total/max(n_d0_total,1):.0f}%)")
-        p()
-        p(f"D0-DENOMINATOR PERSPECTIVE (relapses avoided framing):")
-        p(f"  Of {n_d0_total} D0-genotyped patients, {n_rel_tot} "
-          f"({100*n_rel_tot/max(n_d0_total,1):.1f}%) had >= 1 relapse.")
-        p(f"  {n_no_rec_total} ({100*n_no_rec_total/max(n_d0_total,1):.1f}%) "
-          f"had no detected recurrence.")
-        p(f"  Total relapse-classified pairs across all arms: {n_pairs_rel_tot}")
-        p(f"  Total reinfection-classified pairs:             {n_pairs_rei_tot}")
-    p(f"  Total patients with classified consecutive pairs: {n_tot}")
-    p(f"  Any relapse:              {n_rel_tot} ({100*n_rel_tot/max(n_tot,1):.0f}%)")
-    p(f"  Any reinfection:          {n_rei_tot} ({100*n_rei_tot/max(n_tot,1):.0f}%)")
-    p(f"  Mixed trajectory:         {n_mix_tot} ({100*n_mix_tot/max(n_tot,1):.0f}%)")
-    p(f"  Pure relapse (all steps): {n_all_rel_tot} ({100*n_all_rel_tot/max(n_tot,1):.0f}%)")
+        p(f"\nTOTAL D0 genotyped across all arms: {sum(d0_counts.values())}")
 
-    p(f"\nPAIR-LEVEL:")
-    p(f"  Total classified pairs:   {n_pairs_tot}")
-    p(f"  Relapse:                  {n_pairs_rel_tot} ({100*n_pairs_rel_tot/max(n_pairs_tot,1):.1f}%)")
-    p(f"  Reinfection:              {n_pairs_rei_tot} ({100*n_pairs_rei_tot/max(n_pairs_tot,1):.1f}%)")
-    p(f"  Indeterminate:            {n_pairs_unc_tot} ({100*n_pairs_unc_tot/max(n_pairs_tot,1):.1f}%)")
+    p()
+    return "\n".join(lines)
 
     if pat_sc is not None:
         n_sc_tot = pat_sc["has_same_clone_relapse"].sum()
@@ -459,6 +500,7 @@ def main():
     print(f"   rei_thresh:  p(L) <= {args.rei_thresh}")
     print(f"   r_thresh:    DCiFER r >= {args.r_thresh} (same-clone definition)")
     print(f"   day_thresh:  > {args.day_thresh} days from D0")
+    print(f"   pq_arms:     {args.pq_arms or '(none specified — no PQ/non-PQ split)'}")
 
     d0_counts = load_d0_counts(args.master_dir, args.trial)
     if d0_counts:
@@ -508,7 +550,8 @@ def main():
 
         # ── 4. Narrative summary ──────────────────────────────────────────────
         narrative = write_narrative_summary(
-            pat_traj, pat_sc, pat_lr, args, table_type, out_dir, d0_counts=d0_counts)
+            pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
+            d0_counts=d0_counts, pq_arms=args.pq_arms)
         fp_narr = out_dir / f"narrative_summary{suffix}.txt"
         fp_narr.write_text(narrative)
         print(f"   wrote narrative: {fp_narr.name}")
