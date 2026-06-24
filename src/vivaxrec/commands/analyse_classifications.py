@@ -66,6 +66,16 @@ def parse_args():
     return p.parse_args()
 
 
+def pl_call(pv3rs_L, rel_thresh, rei_thresh):
+    if pd.isna(pv3rs_L):
+        return "uncertain"
+    if pv3rs_L >= rel_thresh:
+        return "relapse"
+    if pv3rs_L <= rei_thresh:
+        return "reinfection"
+    return "uncertain"
+
+
 def load_d0_counts(master_dir, trial):
     """
     Load per-arm D0 genotyped patient counts from master_samples.tsv.
