@@ -415,30 +415,34 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         n_pairs_g     = int(tp_g["n_recurrences"].sum())
 
         p(f"\n{label} ({', '.join(sorted(subset_arms))}):")
+        n_d0_g = 0
+        n_no_g = 0
         if d0_counts:
-            n_d0_g   = sum(d0_counts.get(
+            n_d0_g = sum(d0_counts.get(
                 next((k for k in d0_counts if k.lower() == a.lower()), a), 0)
                 for a in subset_arms)
-            n_no_g   = max(0, n_d0_g - n_tot_g)
+            n_no_g = max(0, n_d0_g - n_tot_g)
+
+        denom = n_d0_g if n_d0_g > 0 else n_tot_g
+        denom_label = f"of {n_d0_g} D0 genotyped" if (d0_counts and n_d0_g > 0) \
+                      else f"of {n_tot_g} with classified pair"
+
+        if d0_counts and n_d0_g > 0:
             p(f"  D0 genotyped:                   {n_d0_g}")
             p(f"  No recurrence / unclassified:   {n_no_g} "
-              f"({100*n_no_g/max(n_d0_g,1):.1f}%)")
+              f"({100*n_no_g/max(denom,1):.1f}%)")
             p(f"  With classified pair:           {n_tot_g} "
-              f"({100*n_tot_g/max(n_d0_g,1):.1f}%)")
-            p(f"  Any relapse [of D0 genotyped]:  {n_rel_g} "
-              f"({100*n_rel_g/max(n_d0_g,1):.1f}%)")
-            p(f"  Any reinfection [of D0]:        {n_rei_g} "
-              f"({100*n_rei_g/max(n_d0_g,1):.1f}%)")
+              f"({100*n_tot_g/max(denom,1):.1f}%)")
         else:
             p(f"  Patients with classified pair:  {n_tot_g}")
-            p(f"  Any relapse:                    {n_rel_g} "
-              f"({100*n_rel_g/max(n_tot_g,1):.1f}%)")
-            p(f"  Any reinfection:                {n_rei_g} "
-              f"({100*n_rei_g/max(n_tot_g,1):.1f}%)")
-        p(f"  Mixed trajectory:               {n_mix_g} "
-          f"({100*n_mix_g/max(n_tot_g,1):.1f}%)")
-        p(f"  Pure relapse (all steps):       {n_all_rel_g} "
-          f"({100*n_all_rel_g/max(n_tot_g,1):.1f}%)")
+        p(f"  Any relapse [{denom_label}]:  {n_rel_g} "
+          f"({100*n_rel_g/max(denom,1):.1f}%)")
+        p(f"  Any reinfection [{denom_label}]: {n_rei_g} "
+          f"({100*n_rei_g/max(denom,1):.1f}%)")
+        p(f"  Mixed trajectory [{denom_label}]: {n_mix_g} "
+          f"({100*n_mix_g/max(denom,1):.1f}%)")
+        p(f"  Pure relapse, all steps [{denom_label}]: {n_all_rel_g} "
+          f"({100*n_all_rel_g/max(denom,1):.1f}%)")
         p(f"  PAIR-LEVEL — total pairs:       {n_pairs_g}")
         p(f"    Relapse:                      {n_pairs_rel_g} "
           f"({100*n_pairs_rel_g/max(n_pairs_g,1):.1f}%)")
