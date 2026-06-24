@@ -56,6 +56,8 @@ def parse_args():
     p.add_argument("--con_dir",    required=True,
                    help="Consecutive classification output directory")
     p.add_argument("--out_dir",    default=None)
+    p.add_argument("--master_dir", default=None,
+                   help="Directory containing <trial>/master_samples.tsv (from prep step)")
     p.add_argument("--trial",      default=None)
     p.add_argument("--rel_thresh", default=0.75, type=float)
     p.add_argument("--rei_thresh", default=0.25, type=float)
@@ -64,7 +66,30 @@ def parse_args():
     return p.parse_args()
 
 
-def pl_call(pv3rs_L, rel_thresh, rei_thresh):
+def load_d0_counts(master_dir, trial):
+    """
+    Load per-arm D0 genotyped patient counts from master_samples.tsv.
+    Uses time_point == 'D0' as the denominator.
+    Returns a dict of {treatment_arm: n_d0} or None if unavailable.
+    """
+    if not master_dir or not trial:
+        return None
+    fp = Path(master_dir) / trial.lower() / "master_samples.tsv"
+    if not fp.exists():
+        print(f"   WARNING: master_samples.tsv not found at {fp} — no-recurrence counts omitted")
+        return None
+    ms = pd.read_csv(fp, sep="\t")
+    if not {"time_point", "treatment_arm", "patient_id"}.issubset(ms.columns):
+        print("   WARNING: master_samples.tsv missing required columns — no-recurrence counts omitted")
+        return None
+    d0 = ms[ms["time_point"] == "D0"]
+    counts = (d0.groupby("treatment_arm", dropna=False)["patient_id"]
+                .nunique()
+                .to_dict())
+    return counts
+
+
+
     if pd.isna(pv3rs_L):
         return "uncertain"
     if pv3rs_L >= rel_thresh:
@@ -213,7 +238,7 @@ def build_patient_trajectories(df, args, table_type):
 # =============================================================================
 # Narrative summary
 # =============================================================================
-def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir):
+def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir, d0_counts=None):
     """
     Write a plain-English narrative summary of key findings per treatment arm,
     suitable for use as draft manuscript text.
@@ -252,17 +277,42 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir)
         max_rel_id    = tp.loc[tp["n_relapse"].idxmax(), "id"] if n_total > 0 else "N/A"
         max_day       = tp["last_rec_day"].max()
 
-        p(f"\nPatients with >= 1 consecutive pair classified: {n_total}")
-        p(f"  - Any relapse (p(L) >= {args.rel_thresh}):          {n_any_rel} "
+        # Pair-level counts (match table denominators)
+        n_pairs_total = int(tp["n_recurrences"].sum())
+        n_pairs_rel   = int(tp["n_relapse"].sum())
+        n_pairs_rei   = int(tp["n_reinfection"].sum())
+        n_pairs_unc   = int(tp["n_uncertain"].sum()) if "n_uncertain" in tp.columns else None
+
+        p(f"\nPATIENT-LEVEL (one count per individual):")
+        if d0_counts:
+            n_d0       = d0_counts.get(arm, 0)
+            n_no_rec   = max(0, n_d0 - n_total)
+            p(f"  D0 genotyped patients:                {n_d0}")
+            p(f"  No recurrence (or no classified pair): {n_no_rec} "
+              f"({100*n_no_rec/max(n_d0,1):.0f}%)")
+        p(f"  Patients with >= 1 classified consecutive pair: {n_total}"
+          + (f" ({100*n_total/max(d0_counts.get(arm,1),1):.0f}% of D0 genotyped)"
+             if d0_counts else ""))
+        p(f"  - Any relapse step (p(L) >= {args.rel_thresh}):          {n_any_rel} "
           f"({100*n_any_rel/max(n_total,1):.0f}%)")
         p(f"  - >= 2 relapse steps:                  {n_multi_rel} "
           f"({100*n_multi_rel/max(n_total,1):.0f}%)")
         p(f"  - All steps relapse (pure relapsers):  {n_all_rel} "
           f"({100*n_all_rel/max(n_total,1):.0f}%)")
-        p(f"  - Any reinfection (p(L) <= {args.rei_thresh}):        {n_any_rei} "
+        p(f"  - Any reinfection step (p(L) <= {args.rei_thresh}):        {n_any_rei} "
           f"({100*n_any_rei/max(n_total,1):.0f}%)")
         p(f"  - Mixed (relapse AND reinfection):     {n_mixed} "
           f"({100*n_mixed/max(n_total,1):.0f}%)")
+
+        p(f"\nPAIR-LEVEL (one count per classified pair, matches summary table):")
+        p(f"  Total classified pairs:   {n_pairs_total}")
+        p(f"  - Relapse pairs:          {n_pairs_rel} "
+          f"({100*n_pairs_rel/max(n_pairs_total,1):.1f}%)")
+        p(f"  - Reinfection pairs:      {n_pairs_rei} "
+          f"({100*n_pairs_rei/max(n_pairs_total,1):.1f}%)")
+        if n_pairs_unc is not None:
+            p(f"  - Indeterminate pairs:    {n_pairs_unc} "
+              f"({100*n_pairs_unc/max(n_pairs_total,1):.1f}%)")
 
         if max_rel > 0:
             p(f"\n  Maximum relapse steps in one patient: {max_rel} (patient {max_rel_id})")
@@ -319,17 +369,34 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir)
 
     # ── Overall summary ───────────────────────────────────────────────────────
     h("OVERALL SUMMARY")
-    n_tot      = len(pat_traj)
-    n_rel_tot  = (pat_traj["n_relapse"] >= 1).sum()
-    n_rei_tot  = (pat_traj["n_reinfection"] >= 1).sum()
-    n_mix_tot  = pat_traj["mixed_trajectory"].sum()
+    n_tot         = len(pat_traj)
+    n_rel_tot     = (pat_traj["n_relapse"] >= 1).sum()
+    n_rei_tot     = (pat_traj["n_reinfection"] >= 1).sum()
+    n_mix_tot     = pat_traj["mixed_trajectory"].sum()
     n_all_rel_tot = pat_traj["all_relapse"].sum()
+    n_pairs_tot   = int(pat_traj["n_recurrences"].sum())
+    n_pairs_rel_tot = int(pat_traj["n_relapse"].sum())
+    n_pairs_rei_tot = int(pat_traj["n_reinfection"].sum())
+    n_pairs_unc_tot = int(pat_traj["n_uncertain"].sum()) if "n_uncertain" in pat_traj.columns else 0
 
-    p(f"Total patients with classified consecutive pairs: {n_tot}")
-    p(f"  Any relapse:          {n_rel_tot} ({100*n_rel_tot/max(n_tot,1):.0f}%)")
-    p(f"  Any reinfection:      {n_rei_tot} ({100*n_rei_tot/max(n_tot,1):.0f}%)")
-    p(f"  Mixed trajectory:     {n_mix_tot} ({100*n_mix_tot/max(n_tot,1):.0f}%)")
+    p(f"PATIENT-LEVEL:")
+    if d0_counts:
+        n_d0_total = sum(d0_counts.values())
+        n_no_rec_total = max(0, n_d0_total - n_tot)
+        p(f"  Total D0 genotyped:               {n_d0_total}")
+        p(f"  No recurrence / unclassified:     {n_no_rec_total} "
+          f"({100*n_no_rec_total/max(n_d0_total,1):.0f}%)")
+    p(f"  Total patients with classified consecutive pairs: {n_tot}")
+    p(f"  Any relapse:              {n_rel_tot} ({100*n_rel_tot/max(n_tot,1):.0f}%)")
+    p(f"  Any reinfection:          {n_rei_tot} ({100*n_rei_tot/max(n_tot,1):.0f}%)")
+    p(f"  Mixed trajectory:         {n_mix_tot} ({100*n_mix_tot/max(n_tot,1):.0f}%)")
     p(f"  Pure relapse (all steps): {n_all_rel_tot} ({100*n_all_rel_tot/max(n_tot,1):.0f}%)")
+
+    p(f"\nPAIR-LEVEL:")
+    p(f"  Total classified pairs:   {n_pairs_tot}")
+    p(f"  Relapse:                  {n_pairs_rel_tot} ({100*n_pairs_rel_tot/max(n_pairs_tot,1):.1f}%)")
+    p(f"  Reinfection:              {n_pairs_rei_tot} ({100*n_pairs_rei_tot/max(n_pairs_tot,1):.1f}%)")
+    p(f"  Indeterminate:            {n_pairs_unc_tot} ({100*n_pairs_unc_tot/max(n_pairs_tot,1):.1f}%)")
 
     if pat_sc is not None:
         n_sc_tot = pat_sc["has_same_clone_relapse"].sum()
@@ -359,6 +426,11 @@ def main():
     print(f"   rei_thresh:  p(L) <= {args.rei_thresh}")
     print(f"   r_thresh:    DCiFER r >= {args.r_thresh} (same-clone definition)")
     print(f"   day_thresh:  > {args.day_thresh} days from D0")
+
+    d0_counts = load_d0_counts(args.master_dir, args.trial)
+    if d0_counts:
+        print(f"   D0 counts loaded: {sum(d0_counts.values())} patients across "
+              f"{len(d0_counts)} arms")
 
     for table_type, fname in CLASSIFICATION_FILES.items():
         fp = con_dir / fname
@@ -402,7 +474,7 @@ def main():
 
         # ── 4. Narrative summary ──────────────────────────────────────────────
         narrative = write_narrative_summary(
-            pat_traj, pat_sc, pat_lr, args, table_type, out_dir)
+            pat_traj, pat_sc, pat_lr, args, table_type, out_dir, d0_counts=d0_counts)
         fp_narr = out_dir / f"narrative_summary{suffix}.txt"
         fp_narr.write_text(narrative)
         print(f"   wrote narrative: {fp_narr.name}")
