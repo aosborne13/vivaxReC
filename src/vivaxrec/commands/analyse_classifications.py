@@ -96,7 +96,8 @@ def load_d0_counts(master_dir, trial):
     counts = (d0.groupby("treatment_arm", dropna=False)["patient_id"]
                 .nunique()
                 .to_dict())
-    return counts
+    # Normalise keys to lowercase for case-insensitive matching downstream
+    return {str(k): v for k, v in counts.items()}
 
 
 
@@ -294,15 +295,19 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         n_pairs_unc   = int(tp["n_uncertain"].sum()) if "n_uncertain" in tp.columns else None
 
         p(f"\nPATIENT-LEVEL (one count per individual):")
+        n_d0 = 0
+        n_no_rec = 0
         if d0_counts:
-            n_d0       = d0_counts.get(arm, 0)
-            n_no_rec   = max(0, n_d0 - n_total)
-            p(f"  D0 genotyped patients:                {n_d0}")
+            # Case-insensitive lookup
+            arm_key = next((k for k in d0_counts if k.lower() == str(arm).lower()), None)
+            n_d0    = d0_counts.get(arm_key, 0) if arm_key else 0
+            n_no_rec = max(0, n_d0 - n_total)
+            p(f"  D0 genotyped patients:                 {n_d0}")
             p(f"  No recurrence (or no classified pair): {n_no_rec} "
               f"({100*n_no_rec/max(n_d0,1):.0f}%)")
         p(f"  Patients with >= 1 classified consecutive pair: {n_total}"
-          + (f" ({100*n_total/max(d0_counts.get(arm,1),1):.0f}% of D0 genotyped)"
-             if d0_counts else ""))
+          + (f" ({100*n_total/max(n_d0,1):.0f}% of D0 genotyped)"
+             if d0_counts and n_d0 > 0 else ""))
         p(f"  - Any relapse step (p(L) >= {args.rel_thresh}):          {n_any_rel} "
           f"({100*n_any_rel/max(n_total,1):.0f}%)")
         p(f"  - >= 2 relapse steps:                  {n_multi_rel} "
@@ -333,13 +338,23 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         p(f"\n  DRAFT: In the {arm} arm, {n_any_rel} of {n_total} patients "
           f"({100*n_any_rel/max(n_total,1):.0f}%) experienced at least one relapse. "
           f"{n_multi_rel} patients had two or more consecutive relapse steps")
-        if max_rel >= 2:
-            p(f"  (maximum {max_rel} steps in a single patient, patient {max_rel_id}),")
-        if pd.notna(max_day):
-            p(f"  with the latest recurrence observed at day {int(max_day)} from enrolment.")
-        if n_mixed > 0:
-            p(f"  {n_mixed} patient(s) had a mixed trajectory (at least one relapse "
-              f"and one reinfection), suggesting reinfection seeding subsequent relapses.")
+        if d0_counts and n_d0 > 0:
+            p(f"\nD0-DENOMINATOR PERSPECTIVE (all genotyped patients at risk):")
+            p(f"  This uses all {n_d0} D0-genotyped patients as the denominator,")
+            p(f"  including {n_no_rec} who had no classified recurrence.")
+            p(f"  - Patients with >= 1 relapse:     {n_any_rel} / {n_d0} "
+              f"({100*n_any_rel/n_d0:.1f}%)")
+            p(f"  - Patients with >= 1 reinfection: {n_any_rei} / {n_d0} "
+              f"({100*n_any_rei/n_d0:.1f}%)")
+            p(f"  - Patients with no recurrence:    {n_no_rec} / {n_d0} "
+              f"({100*n_no_rec/n_d0:.1f}%)")
+            p(f"  - Total relapse pairs (all steps): {n_pairs_rel} across {n_any_rel} patients")
+            p()
+            p(f"  DRAFT (relapses avoided framing): Of {n_d0} patients genotyped")
+            p(f"  at D0 in the {arm} arm, {n_any_rel} ({100*n_any_rel/n_d0:.1f}%) experienced")
+            p(f"  at least one relapse, contributing {n_pairs_rel} relapse-classified")
+            p(f"  recurrences in total. {n_no_rec} patients ({100*n_no_rec/n_d0:.1f}%)")
+            p(f"  had no detected recurrence during follow-up.")
 
         # ── Same-clone relapses ───────────────────────────────────────────────
         if pat_sc is not None:
@@ -396,6 +411,14 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         p(f"  Total D0 genotyped:               {n_d0_total}")
         p(f"  No recurrence / unclassified:     {n_no_rec_total} "
           f"({100*n_no_rec_total/max(n_d0_total,1):.0f}%)")
+        p()
+        p(f"D0-DENOMINATOR PERSPECTIVE (relapses avoided framing):")
+        p(f"  Of {n_d0_total} D0-genotyped patients, {n_rel_tot} "
+          f"({100*n_rel_tot/max(n_d0_total,1):.1f}%) had >= 1 relapse.")
+        p(f"  {n_no_rec_total} ({100*n_no_rec_total/max(n_d0_total,1):.1f}%) "
+          f"had no detected recurrence.")
+        p(f"  Total relapse-classified pairs across all arms: {n_pairs_rel_tot}")
+        p(f"  Total reinfection-classified pairs:             {n_pairs_rei_tot}")
     p(f"  Total patients with classified consecutive pairs: {n_tot}")
     p(f"  Any relapse:              {n_rel_tot} ({100*n_rel_tot/max(n_tot,1):.0f}%)")
     p(f"  Any reinfection:          {n_rei_tot} ({100*n_rei_tot/max(n_tot,1):.0f}%)")
@@ -441,6 +464,7 @@ def main():
     if d0_counts:
         print(f"   D0 counts loaded: {sum(d0_counts.values())} patients across "
               f"{len(d0_counts)} arms")
+        print(f"   D0 arms: {list(d0_counts.keys())}")
 
     for table_type, fname in CLASSIFICATION_FILES.items():
         fp = con_dir / fname
