@@ -451,10 +451,14 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         p(f"    Indeterminate:                {n_pairs_unc_g} "
           f"({100*n_pairs_unc_g/max(n_pairs_g,1):.1f}%)")
         if pat_sc is not None:
-            sc_g  = pat_sc[pat_sc["treatment_arm"].isin(subset_arms)]
+            sc_g   = pat_sc[pat_sc["treatment_arm"].isin(subset_arms)]
             n_sc_g = sc_g["has_same_clone_relapse"].sum() if len(sc_g) else 0
-            p(f"  Same-clone relapses:            {n_sc_g} "
-              f"({100*n_sc_g/max(n_tot_g,1):.1f}%)")
+            n_sc_pairs_g = int(sc_g["n_same_clone_steps"].sum()) if len(sc_g) else 0
+            p(f"  Same-clone relapses (DCiFER r >= {args.r_thresh}):")
+            p(f"    Patients with >= 1 same-clone step: {n_sc_g} / {n_rel_g} relapsers "
+              f"({100*n_sc_g/max(n_rel_g,1):.1f}% of those with any relapse)")
+            p(f"    Same-clone relapse pairs:           {n_sc_pairs_g} / {n_pairs_rel_g} "
+              f"({100*n_sc_pairs_g/max(n_pairs_rel_g,1):.1f}% of all relapse pairs)")
         if pat_lr is not None:
             lr_g  = pat_lr[pat_lr["treatment_arm"].isin(subset_arms)]
             n_ex_g = int((lr_g["day"] > args.day_thresh).sum()) if len(lr_g) else 0
