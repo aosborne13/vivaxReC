@@ -50,6 +50,10 @@ def cmd_prep(extra):
     _run([PY_CMD, str(COMMANDS_DIR / "prep_pv3rs_inputs.py")] + extra)
 
 
+def cmd_analyse(extra):
+    _run([PY_CMD, str(COMMANDS_DIR / "analyse_classifications.py")] + extra)
+
+
 def cmd_summarise(extra):
     _run([PY_CMD, str(COMMANDS_DIR / "summarise_classifications.py")] + extra)
 
@@ -157,6 +161,43 @@ Outputs per trial found in the data:
   per_sample_locus_alleles.tsv
   d0_dr_pairs.tsv
   allele_freq_from_D0.tsv"""
+    ),
+    "analyse": (
+        cmd_analyse,
+        "Patient-level analyses: same-clone relapses, longest relapses, trajectories",
+        """\
+Patient-level analyses from classification outputs. Does not re-run Pv3Rs.
+
+Three analyses are produced:
+
+  same_clone_relapses  (consecutive pairs)
+    Consecutive relapse pairs where DCiFER r >= r_thresh — suggesting the same
+    clone persisting across multiple recurrences. Per-patient and per-arm summaries.
+
+  longest_relapses  (baseline pairs)
+    Relapses sorted by days since D0. Flags those exceeding day_thresh.
+    Per-patient and per-arm summaries.
+
+  patient_trajectories  (baseline and/or consecutive)
+    Full per-patient recurrence sequence with classifications. Per-patient
+    summary of relapse/reinfection/uncertain counts and trajectory patterns.
+
+Options:
+  --bl_dir      DIR    Baseline classification output directory
+  --con_dir     DIR    Consecutive classification output directory
+  --out_dir     DIR    Output directory (default: same as input)
+  --trial       STR    Trial name for labelling
+  --rel_thresh  FLOAT  P(L) threshold for relapse (default: 0.75)
+  --rei_thresh  FLOAT  P(L) threshold for reinfection (default: 0.25)
+  --r_thresh    FLOAT  DCiFER r threshold for same-clone definition (default: 0.95)
+  --day_thresh  INT    Days threshold for long relapse flag (default: 300)
+
+Example:
+  vivaxrec analyse \\
+    --bl_dir  /data/recurrence-classification/mytrial/baseline-to-recurrence \\
+    --con_dir /data/recurrence-classification/mytrial/consecutive-pairs \\
+    --trial   mytrial \\
+    --r_thresh 0.95 --day_thresh 300"""
     ),
     "summarise": (
         cmd_summarise,
