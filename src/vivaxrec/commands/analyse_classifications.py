@@ -287,9 +287,13 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         n_all_rel     = tp["all_relapse"].sum()
         n_mixed       = tp["mixed_trajectory"].sum()
         n_any_rei     = (tp["n_reinfection"] >= 1).sum()
-        max_rel       = int(tp["n_relapse"].max())
-        max_rel_id    = tp.loc[tp["n_relapse"].idxmax(), "id"] if n_total > 0 else "N/A"
-        max_day       = tp["last_rec_day"].max()
+        max_rel    = int(tp["n_relapse"].max()) if n_total > 0 else 0
+        max_rel_id = tp.loc[tp["n_relapse"].idxmax(), "id"] if n_total > 0 else "N/A"
+        max_rel_day = tp.loc[tp["n_relapse"].idxmax(), "last_rec_day"] \
+                      if n_total > 0 else None
+        max_day    = tp["last_rec_day"].max()
+        max_day_id = tp.loc[tp["last_rec_day"].idxmax(), "id"] \
+                     if n_total > 0 and pd.notna(max_day) else "N/A"
 
         # Pair-level counts (match table denominators)
         n_pairs_total = int(tp["n_recurrences"].sum())
@@ -333,14 +337,26 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
               f"({100*n_pairs_unc/max(n_pairs_total,1):.1f}%)")
 
         if max_rel > 0:
-            p(f"\n  Maximum relapse steps in one patient: {max_rel} (patient {max_rel_id})")
+            p(f"\n  Maximum relapse steps in one patient: {max_rel} (patient {max_rel_id}"
+              + (f", last recurrence day {int(max_rel_day)}" if pd.notna(max_rel_day) else "")
+              + ")")
         if pd.notna(max_day):
-            p(f"  Latest observed recurrence: day {int(max_day)} from D0")
+            same = (str(max_day_id) == str(max_rel_id))
+            if same:
+                p(f"  Latest observed recurrence: day {int(max_day)} from D0 (same patient: {max_day_id})")
+            else:
+                p(f"  Latest observed recurrence: day {int(max_day)} from D0 (patient {max_day_id})")
 
         # Draft sentence
         p(f"\n  DRAFT: In the {arm} arm, {n_any_rel} of {n_total} patients "
           f"({100*n_any_rel/max(n_total,1):.0f}%) experienced at least one relapse. "
-          f"{n_multi_rel} patients had two or more consecutive relapse steps")
+          f"{n_multi_rel} patients had two or more consecutive relapse steps.")
+        if max_rel >= 2:
+            p(f"  The patient with the most relapse steps (patient {max_rel_id}) had {max_rel} "
+              f"relapse-classified recurrences"
+              + (f" over {int(max_rel_day)} days." if pd.notna(max_rel_day) else "."))
+        if pd.notna(max_day) and str(max_day_id) != str(max_rel_id):
+            p(f"  The latest relapse occurred at day {int(max_day)} from enrolment (patient {max_day_id}).")
         if d0_counts and n_d0 > 0:
             p(f"\nD0-DENOMINATOR PERSPECTIVE (all genotyped patients at risk):")
             p(f"  This uses all {n_d0} D0-genotyped patients as the denominator,")
