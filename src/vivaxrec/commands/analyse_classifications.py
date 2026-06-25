@@ -287,13 +287,31 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
         n_all_rel     = tp["all_relapse"].sum()
         n_mixed       = tp["mixed_trajectory"].sum()
         n_any_rei     = (tp["n_reinfection"] >= 1).sum()
-        max_rel    = int(tp["n_relapse"].max()) if n_total > 0 else 0
-        max_rel_id = tp.loc[tp["n_relapse"].idxmax(), "id"] if n_total > 0 else "N/A"
-        max_rel_day = tp.loc[tp["n_relapse"].idxmax(), "last_rec_day"] \
-                      if n_total > 0 else None
-        max_day    = tp["last_rec_day"].max()
-        max_day_id = tp.loc[tp["last_rec_day"].idxmax(), "id"] \
-                     if n_total > 0 and pd.notna(max_day) else "N/A"
+        max_rec       = int(tp["n_recurrences"].max()) if n_total > 0 else 0
+        max_rec_id    = tp.loc[tp["n_recurrences"].idxmax(), "id"] if n_total > 0 else "N/A"
+        max_rec_rel   = int(tp.loc[tp["n_recurrences"].idxmax(), "n_relapse"]) if n_total > 0 else 0
+        max_rec_rei   = int(tp.loc[tp["n_recurrences"].idxmax(), "n_reinfection"]) if n_total > 0 else 0
+        max_rec_unc   = int(tp.loc[tp["n_recurrences"].idxmax(), "n_uncertain"]) \
+                        if n_total > 0 and "n_uncertain" in tp.columns else 0
+        max_rec_day   = tp.loc[tp["n_recurrences"].idxmax(), "last_rec_day"] if n_total > 0 else None
+
+        max_rel       = int(tp["n_relapse"].max()) if n_total > 0 else 0
+        max_rel_id    = tp.loc[tp["n_relapse"].idxmax(), "id"] if n_total > 0 else "N/A"
+        max_rel_day   = tp.loc[tp["n_relapse"].idxmax(), "last_rec_day"] if n_total > 0 else None
+
+        max_day       = tp["last_rec_day"].max()
+        max_day_id    = tp.loc[tp["last_rec_day"].idxmax(), "id"] \
+                        if n_total > 0 and pd.notna(max_day) else "N/A"
+
+        mean_rec  = round(tp["n_recurrences"].mean(), 1)
+        med_rec   = round(tp["n_recurrences"].median(), 1)
+        mean_rel  = round(tp["n_relapse"].mean(), 1)
+        med_rel   = round(tp["n_relapse"].median(), 1)
+        # Among those with any recurrence
+        mean_rec_among = round(tp[tp["n_recurrences"] >= 1]["n_recurrences"].mean(), 1) \
+                         if (tp["n_recurrences"] >= 1).any() else 0
+        mean_rel_among = round(tp[tp["n_relapse"] >= 1]["n_relapse"].mean(), 1) \
+                         if (tp["n_relapse"] >= 1).any() else 0
 
         # Pair-level counts (match table denominators)
         n_pairs_total = int(tp["n_recurrences"].sum())
@@ -336,27 +354,53 @@ def write_narrative_summary(pat_traj, pat_sc, pat_lr, args, table_type, out_dir,
             p(f"  - Indeterminate pairs:    {n_pairs_unc} "
               f"({100*n_pairs_unc/max(n_pairs_total,1):.1f}%)")
 
-        if max_rel > 0:
-            p(f"\n  Maximum relapse steps in one patient: {max_rel} (patient {max_rel_id}"
+        if max_rec > 0:
+            p(f"\n  Maximum recurrences in one patient: {max_rec} (patient {max_rec_id}"
+              + (f", last recurrence day {int(max_rec_day)}" if pd.notna(max_rec_day) else "")
+              + f") — of these: {max_rec_rel} relapse, {max_rec_rei} reinfection, "
+              + f"{max_rec_unc} indeterminate)")
+        if max_rel > 0 and max_rel_id != max_rec_id:
+            p(f"  Maximum relapse steps in one patient: {max_rel} (patient {max_rel_id}"
               + (f", last recurrence day {int(max_rel_day)}" if pd.notna(max_rel_day) else "")
               + ")")
+        elif max_rel > 0:
+            p(f"  (same patient also had the most relapse steps: {max_rel})")
         if pd.notna(max_day):
-            same = (str(max_day_id) == str(max_rel_id))
+            same = (str(max_day_id) == str(max_rec_id))
             if same:
-                p(f"  Latest observed recurrence: day {int(max_day)} from D0 (same patient: {max_day_id})")
+                p(f"  Latest observed recurrence: day {int(max_day)} from D0 "
+                  f"(same patient: {max_day_id})")
             else:
-                p(f"  Latest observed recurrence: day {int(max_day)} from D0 (patient {max_day_id})")
+                p(f"  Latest observed recurrence: day {int(max_day)} from D0 "
+                  f"(patient {max_day_id})")
 
-        # Draft sentence
+        p(f"\n  Recurrences per patient (all {n_total} with >= 1 pair):")
+        p(f"    Mean:   {mean_rec}  |  Median: {med_rec}")
+        p(f"  Among those with >= 1 recurrence: mean {mean_rec_among}")
+        p(f"  Relapses per patient (all {n_total}):")
+        p(f"    Mean:   {mean_rel}  |  Median: {med_rel}")
+        p(f"  Among those with >= 1 relapse ({n_any_rel} patients): "
+          f"mean {mean_rel_among}")
+
         p(f"\n  DRAFT: In the {arm} arm, {n_any_rel} of {n_total} patients "
-          f"({100*n_any_rel/max(n_total,1):.0f}%) experienced at least one relapse. "
+          f"({100*n_any_rel/max(n_total,1):.0f}%) experienced at least one relapse "
+          f"(mean {mean_rel_among} relapses per relapsing patient). "
           f"{n_multi_rel} patients had two or more consecutive relapse steps.")
-        if max_rel >= 2:
-            p(f"  The patient with the most relapse steps (patient {max_rel_id}) had {max_rel} "
-              f"relapse-classified recurrences"
+        if max_rec >= 2:
+            p(f"  The patient with the most recurrences (patient {max_rec_id}) had "
+              f"{max_rec} total recurrences ({max_rec_rel} relapse, {max_rec_rei} reinfection, "
+              f"{max_rec_unc} indeterminate)"
+              + (f" over {int(max_rec_day)} days." if pd.notna(max_rec_day) else "."))
+        if max_rel >= 2 and max_rel_id != max_rec_id:
+            p(f"  The patient with the most relapse steps (patient {max_rel_id}) had "
+              f"{max_rel} relapse-classified recurrences"
               + (f" over {int(max_rel_day)} days." if pd.notna(max_rel_day) else "."))
-        if pd.notna(max_day) and str(max_day_id) != str(max_rel_id):
-            p(f"  The latest relapse occurred at day {int(max_day)} from enrolment (patient {max_day_id}).")
+        if pd.notna(max_day) and str(max_day_id) not in (str(max_rec_id), str(max_rel_id)):
+            p(f"  The latest recurrence occurred at day {int(max_day)} from enrolment "
+              f"(patient {max_day_id}).")
+        if n_mixed > 0:
+            p(f"  {n_mixed} patient(s) had a mixed trajectory (at least one relapse "
+              f"and one reinfection), suggesting reinfection seeding subsequent relapses.")
         if d0_counts and n_d0 > 0:
             p(f"\nD0-DENOMINATOR PERSPECTIVE (all genotyped patients at risk):")
             p(f"  This uses all {n_d0} D0-genotyped patients as the denominator,")
