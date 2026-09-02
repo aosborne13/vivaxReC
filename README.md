@@ -131,10 +131,13 @@ One row per sample. Required columns:
 
 ```
 outputCIGAR.tsv
+		↓
 		↓ (prepare_data.r --infile outputCIGAR.tsv --rmindel --outdir analysis-filtered-no-indel)
+		↓
 	mhap_filtered.tsv
 	↓				↓
 MOIRE				Dcifer
+↓						↓
 (run_Moire.r)			(run_Dcifer.r)
 ↓									↓
 mhap_effective_COI_summary.tsv		mhap_between_relatedness_estimate.tsv
