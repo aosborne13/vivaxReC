@@ -1,7 +1,7 @@
 # vivaxReC
 
 ## What is vivaxReC ?
-**vivaxReC** (**v**ivax **R**ecurrence **C**onsensus) is a wrapper for processing MicroHaplotype data (genotyping data following protocols and design workflows created by **VivaxGEN**) to use towards classifying *Plasmodium vivax* recurrent infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs*, with *Aster* being added at a later date), allele-sharing, relatedness estimates (including *Dcifer* and background relatedness).
+**vivaxReC** (**v**ivax **R**e**C**urrence) is a wrapper for processing multiallelic, MicroHaplotype, data (genotyping data following protocols and design workflows created by **VivaxGEN**) for classifying recurrent *Plasmodium vivax* infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs*, with *Aster* being added at a later date for *P. falciparum* TES), allele-sharing, relatedness estimates (including *Dcifer* and background relatedness).
 
 **vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reinvent existing methods. All primary methodological credit remains with the original tool authors.
 
@@ -12,11 +12,6 @@
 - **Pv3Rs:** [Pv3Rs GitHub](https://github.com/aimeertaylor/Pv3Rs) – probabilistic classification of recrudescence, relapse, and reinfection using within-host genotype series.
 - **DCiFER:** [dcifer GitHub](https://github.com/EPPIcenter/dcifer) – identity-by-descent–based relatedness estimation across loci.
 - **MOIRE:** [moire GitHub](https://github.com/EPPIcenter/moire) – an MCMC based approach to estimating complexity of infection (COI), also sometimes referred to as multiplicity of infection (MOI), population allele frequencies, and within-host relatedness from polyallelic genomics data.
-
-Coming soon:
-- **Aster** [asterTES GitHub](https://github.com/EPPIcenter/asterTES)  – likelihood-based recurrence inference incorporating complexity of infection, detection probability, allele frequencies, and background relatedness.
-
-**vivaxReC** does not modify or reimplement the underlying algorithms from these tools. All likelihoods, relatedness estimates, and probabilistic classifications are computed using the original software, with **vivaxReC** providing post hoc integration, quality control, and consensus-calling logic.
 
 Please refer to the original publications and documentation for for full methodological details and citation information.
 
