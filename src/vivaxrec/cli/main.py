@@ -143,7 +143,14 @@ Outputs:
   baseline_pairs_with_relatedness.tsv
   consecutive_pairs_with_relatedness.tsv
   baseline_samples.tsv
-  summary_by_trial_site.tsv"""
+  summary_by_trial_site.tsv
+
+NOTE: for exclude_substituted_first to work in pair_mode=baseline in the
+classify step, baseline_pairs_with_relatedness.tsv must carry a
+baseline_time_point column (the true time_point label of whichever sample was
+used as each patient's baseline, e.g. "D0" or "DRP1" if substituted). If this
+column is absent, exclude_substituted_first is a no-op in baseline mode
+(consecutive mode has no such dependency)."""
     ),
     "prep": (
         cmd_prep,
@@ -260,7 +267,9 @@ Prior / model:
 
 Drug-specific window/prior overrides (CHANGES Pv3Rs posteriors — use when arms
 use drugs with meaningfully different half-lives, e.g. AL vs CQ). Any arm not
-listed under al_arms/cq_arms uses the global window_days/pC/pL/max_recrud_days:
+listed under al_arms/cq_arms uses the global window_days/pC/pL/max_recrud_days.
+Composes independently with pq_arms — e.g. a patient in ALPQ gets both the
+AL window shape AND the PQ relapse-prior discount at once:
   al_arms              ARM [ARM]   Arm names to receive the AL-specific overrides below
   cq_arms              ARM [ARM]   Arm names to receive the CQ-specific overrides below
   window_days_al       INT INT     w1 w2 override for al_arms (default: falls back to window_days)
@@ -271,24 +280,54 @@ listed under al_arms/cq_arms uses the global window_days/pC/pL/max_recrud_days:
   max_recrud_days_cq   INT         Recrudescence reassignment threshold override for cq_arms
 
 Reporting-only arm grouping (does NOT affect classification — only adds an
-additional summary_by_arm_group*.tsv alongside the existing per-arm summary):
-  arm_group   "ARM:GROUP" ["ARM:GROUP" ...]   e.g. arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ"
+additional summary_by_arm_group*.tsv alongside the existing per-arm summary).
+Arms not listed keep their own name as their group label:
+  arm_group   "ARM:GROUP" ["ARM:GROUP" ...]
+              e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"      (AL, CQ stay separate)
+              e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"   (Control stays separate)
+
+Substituted-baseline reporting exclusion. Some patients are missing a true D0
+but have a genotyped first recurrence (R1) and a directly consecutive second
+recurrence (R2); upstream processing substitutes R1 as a stand-in baseline so
+the R1->R2 interval can still be analysed. This is treatment-equivalent where
+every recurrence gets the same regimen (e.g. IMPROV — leave off), but NOT
+treatment-equivalent where only the true enrolment treatment is directly
+observed (e.g. OPRA, where later doses are unsupervised — turn on):
+  exclude_substituted_first   on|off   Suppress the first interval from reporting
+                                       for patients with a substituted (non-true-
+                                       D0) baseline (default: off). Does NOT
+                                       remove the substituted episode from Pv3Rs's
+                                       joint model — later intervals for that
+                                       patient are unaffected.
 
 Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
   first_rec_only  on|off       Re-run on D0 + first recurrence only (default: off)
   mono_only       on|off       Re-run on patients with monoclonal D0 only (default: off)
   mono_emoi_th    FLOAT        eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
 
-Example — grouping OPRA's ALPQ+CQPQ, with AL/CQ half-life-specific windows:
+Example — OPRA, consecutive: PQ arms grouped (AL/CQ stay separate), AL/CQ
+half-life-specific windows, and substituted-baseline exclusion on:
   vivaxrec classify trial opra pair_mode consecutive \\
     input_dir /data/patient_level_tables \\
     geno /data/mhap_filtered.tsv \\
     master_dir /data/recurrence-classification \\
     out_dir /data/recurrence-classification/opra/consecutive-pairs \\
     pq_arms "ALPQ" "CQPQ" \\
-    arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ" \\
+    arm_group "ALPQ:PQ" "CQPQ:PQ" \\
     al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \\
-    cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45"""
+    cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \\
+    exclude_substituted_first on
+
+Example — IMPROV, consecutive: PQ arms grouped (Control stays separate);
+exclude_substituted_first left off (PQ given at every recurrence, so the
+substitution is treatment-equivalent there):
+  vivaxrec classify trial improv pair_mode consecutive \\
+    input_dir /data/patient_level_tables \\
+    geno /data/mhap_filtered.tsv \\
+    master_dir /data/recurrence-classification \\
+    out_dir /data/recurrence-classification/improv/consecutive-pairs \\
+    pq_arms "7-day" "14-day" \\
+    arm_group "7-day:PQ" "14-day:PQ\""""
     ),
     "plot": (
         cmd_plot,
@@ -361,10 +400,6 @@ def main():
 
     fn, _, _ = SUBCOMMANDS[args.command]
     fn(extra)
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":
