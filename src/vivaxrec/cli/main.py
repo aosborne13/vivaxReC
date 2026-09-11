@@ -258,18 +258,37 @@ Prior / model:
   site            SITE [SITE]  Restrict to one or more sites (space-separated; default: all sites)
   pq_arms         ARM [ARM]    PQ treatment arm names (space-separated)
 
+Drug-specific window/prior overrides (CHANGES Pv3Rs posteriors — use when arms
+use drugs with meaningfully different half-lives, e.g. AL vs CQ). Any arm not
+listed under al_arms/cq_arms uses the global window_days/pC/pL/max_recrud_days:
+  al_arms              ARM [ARM]   Arm names to receive the AL-specific overrides below
+  cq_arms              ARM [ARM]   Arm names to receive the CQ-specific overrides below
+  window_days_al       INT INT     w1 w2 override for al_arms (default: falls back to window_days)
+  window_days_cq       INT INT     w1 w2 override for cq_arms (default: falls back to window_days)
+  pC_al / pC_cq        F F F       Per-window recrudescence prior override for al_arms/cq_arms
+  pL_al / pL_cq        F F F       Per-window relapse prior override for al_arms/cq_arms
+  max_recrud_days_al   INT         Recrudescence reassignment threshold override for al_arms
+  max_recrud_days_cq   INT         Recrudescence reassignment threshold override for cq_arms
+
+Reporting-only arm grouping (does NOT affect classification — only adds an
+additional summary_by_arm_group*.tsv alongside the existing per-arm summary):
+  arm_group   "ARM:GROUP" ["ARM:GROUP" ...]   e.g. arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ"
+
 Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
   first_rec_only  on|off       Re-run on D0 + first recurrence only (default: off)
   mono_only       on|off       Re-run on patients with monoclonal D0 only (default: off)
   mono_emoi_th    FLOAT        eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
 
-Example:
-  vivaxrec classify trial mytrial pair_mode baseline max_recrud_days 45 \\
+Example — grouping OPRA's ALPQ+CQPQ, with AL/CQ half-life-specific windows:
+  vivaxrec classify trial opra pair_mode consecutive \\
     input_dir /data/patient_level_tables \\
     geno /data/mhap_filtered.tsv \\
     master_dir /data/recurrence-classification \\
-    out_dir /data/recurrence-classification/mytrial/baseline-to-recurrence \\
-    pq_arms "arm1" "arm2" first_rec_only on mono_only on"""
+    out_dir /data/recurrence-classification/opra/consecutive-pairs \\
+    pq_arms "ALPQ" "CQPQ" \\
+    arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ" \\
+    al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \\
+    cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45"""
     ),
     "plot": (
         cmd_plot,
@@ -342,6 +361,10 @@ def main():
 
     fn, _, _ = SUBCOMMANDS[args.command]
     fn(extra)
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
