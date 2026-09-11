@@ -24,6 +24,8 @@
 #   output-analysis/baseline-to-recurrence/   (pair_mode baseline)
 #   output-analysis/consecutive-pairs/        (pair_mode consecutive)
 #     per_infection_classifications.tsv
+#     summary_by_arm.tsv
+#     summary_by_arm_group.tsv                (only if arm_group supplied)
 #     sanity_check.txt
 #     checks_emoi_missing.tsv                 (only if samples lack eMOI)
 #
@@ -51,6 +53,10 @@
 #
 #     CQ efficacy example (Getachew et al. 2015): 0.7% early, 8% late treatment failure
 #     PQ efficacy example (Taylor et al. 2019 Lancet): ~5.3x reduction in relapse
+#     AL efficacy example (Byakika-Kibwika et al. 2010, PMC2817784): lumefantrine
+#     terminal half-life ~3-6 days (range 4-10 days in patients), vs CQ's 20-60 days —
+#     window_days_al set to 14 days by default for a conservative margin above the
+#     observed range. Review and adjust for your own setting.
 #
 #   window_days     w1 w2  (default: 35 120)
 #     Window 1 ≤w1:   recrudescence possible, early relapse possible
@@ -72,6 +78,34 @@
 #
 #   armtime         legacy 5-value log-normal prior (back-compat only)
 #                   lambda_foi bump_center bump_sdlog pC_base pI_base
+#
+# ── Drug-specific window/prior overrides ───────────────────────────────────────
+#   These OVERRIDE window_days / pC / pL / max_recrud_days for patients in the
+#   named arms, to account for drugs with materially different half-lives (e.g.
+#   AL's few-day terminal half-life vs CQ's 20-60 day half-life). Any arm not
+#   listed under al_arms or cq_arms uses the global window_days/pC/pL/
+#   max_recrud_days values unchanged. This changes Pv3Rs posteriors — it is not
+#   a cosmetic/reporting-only setting.
+#
+#   al_arms              names of arms to receive the AL-specific overrides below
+#                        e.g.: al_arms "AL" "ALPQ"
+#   cq_arms              names of arms to receive the CQ-specific overrides below
+#                        e.g.: cq_arms "CQ" "CQPQ"
+#   window_days_al       w1 w2 override for al_arms (default: falls back to window_days)
+#   window_days_cq       w1 w2 override for cq_arms (default: falls back to window_days)
+#   pC_al / pC_cq        pC_w1 pC_w2 pC_w3 override for al_arms / cq_arms
+#   pL_al / pL_cq        pL_w1 pL_w2 pL_w3 override for al_arms / cq_arms
+#   max_recrud_days_al   recrudescence reassignment threshold override for al_arms
+#   max_recrud_days_cq   recrudescence reassignment threshold override for cq_arms
+#
+# ── Reporting-only arm grouping ─────────────────────────────────────────────────
+#   Purely additive — does NOT affect Pv3Rs computation, allele frequencies, r_bg,
+#   or any classification. Only relabels treatment_arm for an additional
+#   summary_by_arm_group*.tsv output, alongside the existing per-arm summary.
+#
+#   arm_group       "raw_arm:group_label" pairs, space-separated
+#                   e.g.: arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ"
+#                   Arms not listed keep their own name as their group label.
 #
 # ── Pv3Rs stepwise fallback ───────────────────────────────────────────────────
 #   When sum(MOIs) > 8 for a patient, Pv3Rs runs each consecutive pair
@@ -98,6 +132,19 @@
 #     geno       $BASE/input-files/standardized_inputs/mhap_filtered.tsv \
 #     master_dir $BASE/output-analysis/recurrence-classification \
 #     out_dir    $BASE/output-analysis/recurrence-classification/$TRIAL/consecutive-pairs
+#
+#   # Consecutive pairs, OPRA-style: group ALPQ+CQPQ for reporting, and apply
+#   # AL/CQ half-life-specific windows
+#   Rscript $SCRIPTS/classify_recurrences.R \
+#     trial opra pair_mode consecutive \
+#     input_dir  $BASE/input-files/patient_level_tables \
+#     geno       $BASE/input-files/standardized_inputs/mhap_filtered.tsv \
+#     master_dir $BASE/output-analysis/recurrence-classification \
+#     out_dir    $BASE/output-analysis/recurrence-classification/opra/consecutive-pairs \
+#     pq_arms "ALPQ" "CQPQ" \
+#     arm_group "ALPQ:PQ" "CQPQ:PQ" "AL:nonPQ" "CQ:nonPQ" \
+#     al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \
+#     cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -143,7 +190,20 @@ parse_cli <- function(args) {
     first_rec_only = 1,   # on | off — re-run Pv3Rs on first-recurrence patients only
     mono_only      = 1,   # on | off — re-run Pv3Rs on monoclonal-D0 patients only (D0 eMOI <= threshold)
     mono_emoi_th   = 1,   # eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
-    site           = -1   # site name(s) to restrict analysis to (variable length; space-separated)
+    site           = -1,  # site name(s) to restrict analysis to (variable length; space-separated)
+    # ── Reporting-only arm grouping (does not affect Pv3Rs computation) ────────
+    arm_group      = -1,  # "raw_arm:group_label" pairs, e.g. arm_group "ALPQ:PQ" "CQPQ:PQ"
+    # ── Drug-specific window/prior overrides (DOES change Pv3Rs posteriors) ────
+    al_arms             = -1,  # arm names treated with AL (short half-life) overrides
+    cq_arms             = -1,  # arm names treated with CQ (long half-life) overrides
+    window_days_al      = 2,   # w1 w2 override for al_arms (falls back to global window_days)
+    window_days_cq      = 2,   # w1 w2 override for cq_arms (falls back to global window_days)
+    pC_al                = 3,  # pC_w1 pC_w2 pC_w3 override for al_arms
+    pC_cq                = 3,  # pC_w1 pC_w2 pC_w3 override for cq_arms
+    pL_al                = 3,  # pL_w1 pL_w2 pL_w3 override for al_arms
+    pL_cq                = 3,  # pL_w1 pL_w2 pL_w3 override for cq_arms
+    max_recrud_days_al  = 1,   # recrudescence reassignment threshold override for al_arms
+    max_recrud_days_cq  = 1    # recrudescence reassignment threshold override for cq_arms
   )
   out <- list(); i <- 1L
   while (i <= length(args)) {
@@ -229,6 +289,67 @@ if (use_window_prior) {
 # Supplied via CLI as: pq_arms "7-day" "14-day"
 # If not supplied, no discount is applied.
 pq_arms_flag     <- cli$pq_arms %||% character(0)
+
+# ── Reporting-only arm grouping ────────────────────────────────────────────────
+# Parsed as "raw_arm:group_label" tokens. Purely additive — never used in any
+# Pv3Rs computation, only to label output rows for an additional summary table.
+arm_group_flag <- cli$arm_group %||% character(0)
+arm_group_map  <- character(0)
+if (length(arm_group_flag) > 0) {
+  parts <- strsplit(arm_group_flag, ":", fixed = TRUE)
+  bad   <- vapply(parts, length, integer(1)) != 2L
+  if (any(bad))
+    stop("arm_group entries must be 'raw_arm:group_label', got: ",
+         paste(arm_group_flag[bad], collapse = ", "))
+  arm_group_map <- setNames(vapply(parts, `[`, character(1), 2),
+                            vapply(parts, `[`, character(1), 1))
+  message(sprintf(">> arm_group mapping: %s",
+                  paste(names(arm_group_map), arm_group_map, sep="->", collapse=", ")))
+}
+map_arm_group <- function(raw_arm) {
+  if (raw_arm %in% names(arm_group_map)) arm_group_map[[raw_arm]] else raw_arm
+}
+
+# ── Drug-specific window/prior overrides ───────────────────────────────────────
+# Must be resolved AFTER w1/w2/pC_w/pL_w/max_recrud_days are set above, since
+# any per-drug value not explicitly overridden falls back to those globals.
+al_arms_flag <- cli$al_arms %||% character(0)
+cq_arms_flag <- cli$cq_arms %||% character(0)
+
+resolve_drug_params <- function(suffix, arms_flag) {
+  if (!length(arms_flag)) return(NULL)
+  wd  <- cli[[paste0("window_days_", suffix)]]
+  pc  <- cli[[paste0("pC_", suffix)]]
+  pl  <- cli[[paste0("pL_", suffix)]]
+  mrd <- cli[[paste0("max_recrud_days_", suffix)]]
+  list(
+    arms            = arms_flag,
+    w1              = if (!is.null(wd))  as.numeric(wd[1]) else w1,
+    w2              = if (!is.null(wd))  as.numeric(wd[2]) else w2,
+    pC_w            = if (!is.null(pc))  as.numeric(pc)    else pC_w,
+    pL_w            = if (!is.null(pl))  as.numeric(pl)    else pL_w,
+    max_recrud_days = if (!is.null(mrd)) as.numeric(mrd)   else max_recrud_days
+  )
+}
+
+drug_params <- list(
+  al = resolve_drug_params("al", al_arms_flag),
+  cq = resolve_drug_params("cq", cq_arms_flag)
+)
+if (!is.null(drug_params$al))
+  message(sprintf(">> AL-arm overrides: w1=%g w2=%g pC=%s pL=%s max_recrud_days=%g (arms: %s)",
+                  drug_params$al$w1, drug_params$al$w2,
+                  paste(drug_params$al$pC_w, collapse=" "),
+                  paste(drug_params$al$pL_w, collapse=" "),
+                  drug_params$al$max_recrud_days,
+                  paste(al_arms_flag, collapse=", ")))
+if (!is.null(drug_params$cq))
+  message(sprintf(">> CQ-arm overrides: w1=%g w2=%g pC=%s pL=%s max_recrud_days=%g (arms: %s)",
+                  drug_params$cq$w1, drug_params$cq$w2,
+                  paste(drug_params$cq$pC_w, collapse=" "),
+                  paste(drug_params$cq$pL_w, collapse=" "),
+                  drug_params$cq$max_recrud_days,
+                  paste(cq_arms_flag, collapse=", ")))
 
 # Subset analysis flags — each triggers a separate Pv3Rs run on the restricted dataset.
 # The full-dataset run always happens first; subsets are additional outputs.
@@ -519,6 +640,7 @@ if (pair_mode == "baseline") {
       dr_day         = current_day,
       dr_time_point  = current_time_point,
       treatment_arm,
+      arm_group      = vapply(treatment_arm, map_arm_group, character(1)),
       site,
       emoi_s1        = get_emoi(dplyr::coalesce(baseline_sample_id, sample_id1)),
       emoi_s2        = current_post_effective_coi_mean,
@@ -545,6 +667,7 @@ if (pair_mode == "baseline") {
       from_time_point     = previous_time_point,
       to_time_point       = current_time_point,
       treatment_arm,
+      arm_group           = vapply(treatment_arm, map_arm_group, character(1)),
       site,
       emoi_s1             = get_emoi(dplyr::coalesce(previous_sample_id, sample_id1)),
       emoi_s2             = current_post_effective_coi_mean,
@@ -581,6 +704,17 @@ message(sprintf(">> PQ arm patients: %d (pq_discount=%.2f applied in windows 2-3
 message(sprintf(">> PQ arms specified: %s",
                 if (length(pq_arms_flag)) paste(pq_arms_flag, collapse=", ") else "none"))
 
+# ── Per-patient drug-group lookup (for al_arms/cq_arms window/prior overrides) ─
+# Looks up each patient's treatment_arm from the persistent, full pair_tbl
+# (never reassigned across subset runs, so this remains correct regardless of
+# which subset — full / first_rec_only / mono_only — is currently active).
+get_patient_drug_params <- function(pid) {
+  arm <- pair_tbl$treatment_arm[match(pid, pair_tbl$id)]
+  if (!is.null(drug_params$al) && arm %in% drug_params$al$arms) return(drug_params$al)
+  if (!is.null(drug_params$cq) && arm %in% drug_params$cq$arms) return(drug_params$cq)
+  list(w1 = w1, w2 = w2, pC_w = pC_w, pL_w = pL_w, max_recrud_days = max_recrud_days)
+}
+
 has_geno <- !is.na(pair_tbl$.idx_s1) & !is.na(pair_tbl$.idx_s2)
 message(sprintf(">> pairs with genotypes for allele-sharing: %d / %d",
                 sum(has_geno), nrow(pair_tbl)))
@@ -589,14 +723,18 @@ message(sprintf(">> pairs with genotypes for allele-sharing: %d / %d",
 # Replaces log-normal bump with biologically motivated time windows.
 # Falls back to legacy armtime log-normal if window_days not specified but
 # armtime is, for backwards compatibility.
-tt_prior_row <- function(dt, is_pq_arm = FALSE) {
+# w1_use/w2_use/pC_w_use/pL_w_use let callers pass drug-specific overrides
+# (see al_arms/cq_arms); they default to the global values if not supplied.
+tt_prior_row <- function(dt, is_pq_arm = FALSE,
+                          w1_use = w1, w2_use = w2,
+                          pC_w_use = pC_w, pL_w_use = pL_w) {
   if (!is.finite(dt) || dt < 0) return(c(C = 1/3, L = 1/3, I = 1/3))
 
   # Determine window index
-  win <- if (dt <= w1) 1L else if (dt <= w2) 2L else 3L
+  win <- if (dt <= w1_use) 1L else if (dt <= w2_use) 2L else 3L
 
-  pC  <- pC_w[win]
-  pL  <- pL_w[win]
+  pC  <- pC_w_use[win]
+  pL  <- pL_w_use[win]
   # PQ arms: discount pL in windows 2 and 3 (hypnozoite reservoir cleared)
   if (is_pq_arm && win >= 2L) pL <- pL * pq_discount
   # lambda_foi-derived reinfection probability — uncapped, grows freely with time
@@ -681,6 +819,7 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
   idx_ord   <- idx_ord[order(dfsmp$day[idx_ord], dfsmp$smp_id[idx_ord])]
   day_diffs <- diff(dfsmp$day[idx_ord])
   is_pq     <- pid %in% pq_arm_pids
+  dparams   <- get_patient_drug_params(pid)
   MOIs_min <- tryCatch(
     Pv3Rs::determine_MOIs(inp$y),
     error = function(e) rep(1L, length(inp$y))
@@ -700,7 +839,9 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
         next
       }
       dt_k  <- if (length(day_diffs) >= k) day_diffs[k] else NA_real_
-      pr_k  <- matrix(tt_prior_row(dt_k, is_pq_arm = is_pq),
+      pr_k  <- matrix(tt_prior_row(dt_k, is_pq_arm = is_pq,
+                                    w1_use = dparams$w1, w2_use = dparams$w2,
+                                    pC_w_use = dparams$pC_w, pL_w_use = dparams$pL_w),
                       nrow = 1L, ncol = 3L,
                       dimnames = list(NULL, c("C","L","I")))
       res_k <- tryCatch(
@@ -729,7 +870,9 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
       prior[k, ] <- if (use_armtime && !use_window_prior)
         tt_prior_row_lognormal(day_diffs[k])
       else
-        tt_prior_row(day_diffs[k], is_pq_arm = is_pq)
+        tt_prior_row(day_diffs[k], is_pq_arm = is_pq,
+                     w1_use = dparams$w1, w2_use = dparams$w2,
+                     pC_w_use = dparams$pC_w, pL_w_use = dparams$pL_w)
     }
   } else if (is.finite(pC_base) && is.finite(pI_base)) {
     v <- c(C = pC_base, L = 1 - (pC_base + pI_base), I = pI_base)
@@ -752,12 +895,18 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
 
 # ── Recrudescence time-based reassignment ─────────────────────────────────────
 # P. vivax recrudescence (treatment failure) is biologically implausible beyond
-# ~45 days given strong chloroquine efficacy. When Pv3Rs calls C (recrudescence)
-# but the interval between the paired samples exceeds max_recrud_days, the call
-# is reassigned to the next most probable state (L or I) based on the pv3rs_L
-# and pv3rs_I posteriors. The raw pv3rs_C/L/I posteriors are retained unchanged;
+# a drug-specific interval. When Pv3Rs calls C (recrudescence) but the interval
+# between the paired samples exceeds the applicable threshold, the call is
+# reassigned to the next most probable state (L or I) based on the pv3rs_L and
+# pv3rs_I posteriors. The raw pv3rs_C/L/I posteriors are retained unchanged;
 # only pv3rs_top and the derived agreement columns are updated.
-reassign_recrud <- function(df, max_days) {
+#
+# The threshold is resolved per row from treatment_arm: rows whose arm is in
+# al_arms use max_days_al, rows in cq_arms use max_days_cq, everything else
+# uses max_days_default (the global max_recrud_days).
+reassign_recrud <- function(df, max_days_default,
+                            al_arms = character(0), cq_arms = character(0),
+                            max_days_al = NULL, max_days_cq = NULL) {
   if (!"pv3rs_top" %in% names(df)) return(df)
   interval <- if ("dr_day" %in% names(df)) {
     df$dr_day
@@ -766,15 +915,22 @@ reassign_recrud <- function(df, max_days) {
   } else {
     rep(NA_real_, nrow(df))
   }
+
+  max_days_vec <- rep(max_days_default, nrow(df))
+  if (length(al_arms) && !is.null(max_days_al))
+    max_days_vec[df$treatment_arm %in% al_arms] <- max_days_al
+  if (length(cq_arms) && !is.null(max_days_cq))
+    max_days_vec[df$treatment_arm %in% cq_arms] <- max_days_cq
+
   reassign_mask <- !is.na(df$pv3rs_top) &
                    df$pv3rs_top == "C" &
                    !is.na(interval) &
-                   interval > max_days
+                   interval > max_days_vec
   n_reassigned <- sum(reassign_mask)
   if (n_reassigned > 0) {
     message(sprintf(
-      ">> Pv3Rs recrudescence reassignment: %d pair(s) with interval > %g days reassigned",
-      n_reassigned, max_days))
+      ">> Pv3Rs recrudescence reassignment: %d pair(s) reassigned (per-row threshold applied)",
+      n_reassigned))
     new_top <- ifelse(
       df$pv3rs_L[reassign_mask] >= df$pv3rs_I[reassign_mask], "L", "I"
     )
@@ -805,6 +961,11 @@ reassign_recrud <- function(df, max_days) {
 #   pair_mode     "baseline" or "consecutive"
 #   table_type    "full" | "first_rec" | "mono"
 #   mono_emoi_th  threshold used for mono filter (only used when table_type == "mono")
+#
+# NOTE: this function groups strictly by whatever is in df$treatment_arm /
+# meta_d0$treatment_arm — it has no knowledge of arm_group. The grouped
+# summary (summary_by_arm_group*.tsv) is produced by remapping treatment_arm
+# to the group label before calling this function again (see run_and_write).
 #
 # "No recurrences" = patients with a genotyped D0 who have no classified pair.
 make_arm_summary <- function(df, meta_d0, pair_mode, table_type, mono_emoi_th = 1.1) {
@@ -991,7 +1152,13 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
 
   # ── Recrudescence reassignment ─────────────────────────────────────────────
   if (pv3rs_flag == "on" && "pv3rs_top" %in% names(sub_out))
-    sub_out <- reassign_recrud(sub_out, max_recrud_days)
+    sub_out <- reassign_recrud(
+      sub_out, max_recrud_days,
+      al_arms     = if (!is.null(drug_params$al)) drug_params$al$arms else character(0),
+      cq_arms     = if (!is.null(drug_params$cq)) drug_params$cq$arms else character(0),
+      max_days_al = if (!is.null(drug_params$al)) drug_params$al$max_recrud_days else NULL,
+      max_days_cq = if (!is.null(drug_params$cq)) drug_params$cq$max_recrud_days else NULL
+    )
 
   # ── Write output TSV ───────────────────────────────────────────────────────
   fname <- paste0("per_infection_classifications", out_suffix, ".tsv")
@@ -1027,6 +1194,20 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     sprintf("window_days: w1=%g w2=%g | pC: %s | pL: %s | lambda_foi=%.4f | pq_discount=%.2f",
             w1, w2, paste(pC_w, collapse=" "), paste(pL_w, collapse=" "),
             lambda_foi_w, pq_discount),
+    if (!is.null(drug_params$al))
+      sprintf("AL-arm overrides: w1=%g w2=%g | pC: %s | pL: %s | max_recrud_days=%g (arms: %s)",
+              drug_params$al$w1, drug_params$al$w2,
+              paste(drug_params$al$pC_w, collapse=" "), paste(drug_params$al$pL_w, collapse=" "),
+              drug_params$al$max_recrud_days, paste(al_arms_flag, collapse=", "))
+    else "AL-arm overrides: none",
+    if (!is.null(drug_params$cq))
+      sprintf("CQ-arm overrides: w1=%g w2=%g | pC: %s | pL: %s | max_recrud_days=%g (arms: %s)",
+              drug_params$cq$w1, drug_params$cq$w2,
+              paste(drug_params$cq$pC_w, collapse=" "), paste(drug_params$cq$pL_w, collapse=" "),
+              drug_params$cq$max_recrud_days, paste(cq_arms_flag, collapse=", "))
+    else "CQ-arm overrides: none",
+    sprintf("arm_group mapping: %s",
+            if (length(arm_group_map)) paste(names(arm_group_map), arm_group_map, sep="->", collapse=", ") else "none"),
     sprintf("input_dir:  %s", input_dir),
     sprintf("geno:       %s", geno_fp),
     sprintf("out_dir:    %s", out_dir),
@@ -1064,6 +1245,31 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     }, error = function(e) {
       message(sprintf(">> [%s] WARNING: arm summary failed: %s", label, conditionMessage(e)))
     })
+
+    # ── Grouped arm summary (reporting only; only written if arm_group supplied) ──
+    # Reuses make_arm_summary() unchanged by remapping treatment_arm to the
+    # group label before calling it — no effect on classification whatsoever.
+    if (length(arm_group_map) > 0) {
+      tryCatch({
+        meta_d0_grouped <- meta_d0_full %>%
+          mutate(treatment_arm = vapply(treatment_arm, map_arm_group, character(1)))
+        sub_out_grouped <- sub_out %>%
+          mutate(treatment_arm = vapply(treatment_arm, map_arm_group, character(1)))
+        summ_grouped <- make_arm_summary(
+          df           = sub_out_grouped,
+          meta_d0      = meta_d0_grouped,
+          pair_mode    = pair_mode,
+          table_type   = table_type,
+          mono_emoi_th = mono_emoi_th
+        )
+        summ_g_fname <- paste0("summary_by_arm_group", out_suffix, ".tsv")
+        summ_g_fp    <- file.path(out_dir, summ_g_fname)
+        write_tsv(summ_grouped, summ_g_fp)
+        cat(sprintf(">> [%s] grouped summary: %s\n", label, summ_g_fp))
+      }, error = function(e) {
+        message(sprintf(">> [%s] WARNING: grouped arm summary failed: %s", label, conditionMessage(e)))
+      })
+    }
   }
 
   invisible(sub_out)
