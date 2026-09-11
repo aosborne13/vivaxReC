@@ -18,7 +18,7 @@ patient_level_tables/
     consecutive_pairs_with_relatedness.tsv
     baseline_pairs_with_relatedness.tsv
     summary_by_trial_site.tsv
-    excluded_patients_chain_validity.tsv   [NEW]
+    excluded_patients_chain_validity.tsv
 
 ── Valid consecutive chain logic ───────────────────────────────────────────────
 A patient's samples are only used for pairwise analysis (consecutive pairs AND
@@ -27,6 +27,15 @@ recurrences starting from a TRUE Day 0 (time_point == "D0", i.e. recurrence
 number 0). Recurrence number is parsed from time_point ("D0" -> 0, "DRPn" -> n),
 NOT inferred from row position or infection_index, since infection_index is
 purely positional and does not detect gaps.
+
+EXCEPTION: if a patient's non-D0 samples never use the DRPn scheme at all
+(e.g. "M3"/"M7"-style visit labels instead), there is no DRP-numbering
+information available to detect a gap with. In that case the patient's
+existing day-based positional order (infection_index) is trusted directly
+rather than treating every such row as an unparseable gap. This fallback is
+safe only because no patient in this dataset has been found to MIX DRPn and
+non-DRPn labels (verified at time of writing) -- if that ever changes, mixed
+patients will need explicit manual review rather than silent fallback.
 
 Rules:
   - If a patient has no true D0 sample at all, they are excluded from every
@@ -43,8 +52,9 @@ Rules:
     retains only their D0 row; R2 is discarded.
 
 patient_infection_sequence.tsv retains ALL rows (nothing is deleted from the
-record) with two new columns added for transparency:
-  - recurrence_num           parsed integer recurrence number (D0=0, DRPn=n)
+record) with new columns added for transparency:
+  - recurrence_num           parsed integer recurrence number (D0=0, DRPn=n;
+                              NaN for unparseable non-D0 labels, e.g. M3/M7)
   - in_valid_chain           True if this row is within the patient's longest
                               valid, gap-free, D0-anchored prefix
   - max_valid_recurrence_num the cutoff recurrence number for this patient
@@ -136,14 +146,16 @@ meta = meta.sort_values(
 ).copy()
 
 # infection_index = first observed infection = 0, then 1,2,3... (POSITIONAL —
-# retained for backwards compatibility / other reporting, but NOT used to
-# detect gaps; see recurrence_num below for that.)
+# retained for backwards compatibility / other reporting, and now also used
+# as the fallback ordering for patients whose labels don't fit the DRPn
+# scheme at all; see valid_chain_cutoff below.)
 meta["infection_index"] = meta.groupby("external_id").cumcount()
 
 # ── True recurrence number, parsed from time_point (NOT positional) ──────────
-# "D0" -> 0, "DRP1" -> 1, "DRP2" -> 2, etc. Anything unparseable -> NaN, which
-# will correctly break a chain (treated as a gap) rather than being silently
-# skipped.
+# "D0" -> 0, "DRP1" -> 1, "DRP2" -> 2, etc. Anything else (e.g. "M3", "M7")
+# -> NaN, which is a genuine gap UNLESS the patient's whole record uses a
+# non-DRPn scheme, in which case valid_chain_cutoff() below falls back to
+# infection_index instead.
 _DRP_RE = re.compile(r'^DRP(\d+)$')
 
 def parse_recurrence_num(tp):
@@ -158,16 +170,28 @@ def parse_recurrence_num(tp):
 meta["recurrence_num"] = meta["time_point"].apply(parse_recurrence_num)
 
 # ── Valid consecutive chain cutoff per patient ────────────────────────────────
-def valid_chain_cutoff(nums):
+def valid_chain_cutoff(group):
     """
-    nums: sorted, deduplicated list of recurrence_num values observed for one
-    patient (NaNs already dropped).
-    Returns the highest recurrence_num that is part of an unbroken 0,1,2,...
-    run starting at 0. Returns -1 if no true D0 (recurrence_num==0) is present
-    at all.
+    group: one patient's full rows (any columns), already sorted by day.
+    Returns the highest recurrence_num (or, for the non-DRPn fallback case,
+    the highest infection_index) that is part of a valid, gap-free,
+    D0-anchored prefix. Returns -1 if the patient has no true D0 at all.
     """
-    if not nums or nums[0] != 0:
-        return -1
+    recnums = group["recurrence_num"].tolist()
+    if 0 not in [n for n in recnums if pd.notna(n)]:
+        return -1  # no true D0 for this patient
+
+    non_d0 = group[group["time_point"] != "D0"]
+    if len(non_d0) > 0 and non_d0["recurrence_num"].isna().all():
+        # Every non-D0 sample uses a scheme parse_recurrence_num() doesn't
+        # recognise (e.g. all "Mn"-style labels). No DRP-numbering info
+        # exists to detect a gap with for this patient — trust the existing
+        # day-based positional order instead. Safe only because no patient
+        # in this dataset mixes DRPn and non-DRPn labels (verified at the
+        # time this logic was written — re-verify if new data is added).
+        return int(group["infection_index"].max())
+
+    nums = sorted(set(n for n in recnums if pd.notna(n)))
     expected = 0
     max_valid = -1
     for n in nums:
@@ -176,28 +200,30 @@ def valid_chain_cutoff(nums):
             expected += 1
         elif n > expected:
             break  # gap detected — stop here, everything after is discarded
-        # n < expected only happens on an already-deduplicated, sorted list
-        # if there were duplicate recurrence numbers for this patient, which
-        # would itself be a data-quality issue; harmless to skip here.
     return max_valid
 
 chain_cutoff = (
-    meta.dropna(subset=["recurrence_num"])
-        .groupby("external_id")["recurrence_num"]
-        .apply(lambda s: valid_chain_cutoff(sorted(s.unique())))
+    meta.groupby("external_id")
+        .apply(valid_chain_cutoff)
         .rename("max_valid_recurrence_num")
 )
 
 meta = meta.merge(chain_cutoff, on="external_id", how="left")
-# Patients with NO parseable recurrence_num at all (e.g. every time_point was
-# unparseable) get max_valid_recurrence_num = NaN here; treat as fully invalid.
 meta["max_valid_recurrence_num"] = meta["max_valid_recurrence_num"].fillna(-1)
 
+# in_valid_chain now needs to handle the fallback case too: for a
+# non-DRPn-scheme patient, "position" to compare against the cutoff is
+# infection_index, not recurrence_num (which is NaN for those rows).
+meta["_position_for_chain_check"] = meta["recurrence_num"]
+_fallback_mask = meta["recurrence_num"].isna() & (meta["time_point"] != "D0")
+meta.loc[_fallback_mask, "_position_for_chain_check"] = meta.loc[_fallback_mask, "infection_index"]
+
 meta["in_valid_chain"] = (
-    meta["recurrence_num"].notna() &
+    meta["_position_for_chain_check"].notna() &
     (meta["max_valid_recurrence_num"] >= 0) &
-    (meta["recurrence_num"] <= meta["max_valid_recurrence_num"])
+    (meta["_position_for_chain_check"] <= meta["max_valid_recurrence_num"])
 )
+meta = meta.drop(columns=["_position_for_chain_check"])
 
 # ── Audit output: which patients/samples were excluded, and why ──────────────
 excluded = meta[~meta["in_valid_chain"]].copy()
@@ -248,22 +274,16 @@ baseline = meta[meta["recurrence_num"] == 0].copy()
 meta_valid = meta[meta["in_valid_chain"]].copy()
 
 # consecutive pairs only, built from the valid-chain-restricted data.
-# Because meta_valid contains exactly each patient's unbroken 0,1,2,...
-# prefix, a plain positional shift(1) is now safe again — there are no
-# gaps left to accidentally bridge.
+# Because meta_valid contains exactly each patient's unbroken prefix (using
+# recurrence_num where available, infection_index for non-DRPn patients), a
+# plain positional shift(1) is now safe again — there are no gaps left to
+# accidentally bridge.
 pairs = meta_valid.dropna(subset=["prev_sample_id"]).copy()
-# Guard: prev_sample_id must ALSO be in_valid_chain (it always will be, given
-# meta_valid only contains valid-chain rows and shift(1) is computed within
-# each patient's already-restricted group) — kept as an explicit check rather
-# than an assumption.
 pairs = pairs[pairs["prev_sample_id"].isin(meta_valid["sample_id"])].copy()
 
 # =========================
 # PREP RELATEDNESS
 # =========================
-# map sample_id -> patient/trial/site from metadata (full meta, not just
-# valid-chain — relatedness lookups themselves are harmless for any sample;
-# it's PAIR CONSTRUCTION that must be restricted, which happens below)
 sample_map = meta[["sample_id", "external_id", "trial", "site"]].drop_duplicates()
 
 rel = rel.merge(
@@ -288,14 +308,12 @@ rel = rel.merge(
     how="left"
 )
 
-# keep only within-patient comparisons
 rel_within = rel[
     rel["external_id1"].notna() &
     rel["external_id2"].notna() &
     (rel["external_id1"] == rel["external_id2"])
 ].copy()
 
-# symmetrize so pair order does not matter when merging
 rel_rev = rel_within.rename(columns={
     "sample_id1": "sample_id2",
     "sample_id2": "sample_id1",
@@ -323,8 +341,6 @@ rel_sym = rel_sym[rel_keep_cols].copy()
 
 # =========================
 # SEQUENTIAL COMPARISONS
-# D0->DRP1, DRP1->DRP2, DRP2->DRP3, ...
-# (built only from the gap-free, D0-anchored prefix — see meta_valid above)
 # =========================
 pairs_rel = pairs.merge(
     rel_sym,
@@ -359,10 +375,6 @@ pairs_rel["calendar_month_name"] = pairs_rel["current_samp_date"].dt.month_name(
 
 # =========================
 # BASELINE COMPARISONS
-# D0->DRP1, D0->DRP2, D0->DRP3, ...
-# Restricted to meta_valid: only a patient's TRUE D0 sample is used as
-# baseline_sample_id (no substitution), and only samples within that
-# patient's valid, gap-free chain are paired against it.
 # =========================
 baseline_map = (
     meta_valid[meta_valid["recurrence_num"] == 0]
@@ -377,12 +389,8 @@ baseline_map = (
     })
 )
 
-# inner join: only patients with a valid baseline_map entry (i.e. a true D0
-# that is itself in_valid_chain, which it always is when present) contribute
-# baseline pairs at all.
 baseline_pairs = meta_valid.merge(baseline_map, on="external_id", how="inner")
 
-# remove self-comparisons (baseline vs baseline)
 baseline_pairs = baseline_pairs[
     baseline_pairs["sample_id"] != baseline_pairs["baseline_sample_id"]
 ].copy()
