@@ -15,7 +15,10 @@
 #       per_infection_classifications_first_rec_only.tsv    (pair_mode=consecutive, first_rec_only=on)
 #
 #   input-files/patient_level_tables/
-#     patient_infection_sequence.tsv         (for eMOI plots and individual outcomes)
+#     patient_infection_sequence.tsv         (for eMOI plots; "recurred" clinical fact)
+#
+#   <recurrence-classification>/<trial>/master_samples.tsv  (for D0 population —
+#     REQUIRED for individual_outcomes_stacked; see below)
 #
 # ── CLI flags ─────────────────────────────────────────────────────────────────
 #   trial       your trial name (must match trial column in patient_infection_sequence.tsv)
@@ -28,13 +31,15 @@
 #               con_file .../consecutive-pairs/per_infection_classifications_first_rec_only.tsv
 #   figs_dir    path for figures output
 #   pis         path to patient_infection_sequence.tsv
+#   master_samples  path to <trial>/master_samples.tsv (produced by
+#               prep_pv3rs_inputs.py). REQUIRED for individual_outcomes_stacked
+#               — see note below on why.
 #   min_rec     minimum recurrences for patient timeline plot (default: 2)
 #
 #   arm_group   "raw_arm:group_label" pairs, space-separated — reporting-only
-#               arm relabelling applied to bl, con, AND patient_infection_sequence.tsv
-#               (eMOI-over-time, eMOI-spaghetti, individual-outcomes plots).
-#               Does not change any classification, only which facet/legend
-#               label a row's treatment_arm renders under.
+#               arm relabelling applied to bl, con, patient_infection_sequence.tsv,
+#               AND master_samples.tsv. Does not change any classification,
+#               only which facet/legend label a row's treatment_arm renders under.
 #               e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"      (AL, CQ stay separate)
 #               e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"   (Control stays separate)
 #
@@ -44,26 +49,41 @@
 #               from_day, to_sample_id, from_sample_id — i.e. what
 #               classify_recurrences.R writes when run with pair_mode
 #               consecutive first_rec_only on). Its columns are renamed to the
-#               baseline schema (recurrence_no, dr_day, dr_sample_id) and the
-#               result is stored in the same internal slot the script has
+#               baseline schema and stored in the same slot the script has
 #               always used for "one D0-anchored observation per patient"
-#               plots. This lets those plots work correctly WITHOUT ever
-#               running classify_recurrences.R with pair_mode baseline. With
-#               this flag on, con is NOT also populated.
+#               plots. Lets those plots work WITHOUT ever running
+#               classify_recurrences.R with pair_mode baseline. With this flag
+#               on, con is NOT also populated.
 #
 # ── Headline outputs ──────────────────────────────────────────────────────────
 #   individual_outcomes_stacked_<TRIAL>_<MODE>.png
-#     One bar per (grouped) treatment arm; every Day 0-genotyped individual is
-#     placed into Relapse / Reinfection / Indeterminate / Recurred-unclassifiable
-#     / Did not recur. Generated for WHICHEVER of bl/con is loaded — works for
-#     first-rec-only runs (first_rec_as_baseline=on, uses bl, <MODE>=first_rec)
-#     and all-recurrences runs (uses con, <MODE>=all_rec) alike.
+#     One bar per (grouped) treatment arm; every patient whose Day-0 sample
+#     was SUCCESSFULLY SEQUENCED (per master_samples.tsv) is placed into
+#     Relapse / Reinfection / Indeterminate / Recurred-unclassifiable /
+#     Did not recur.
+#
+#     IMPORTANT: the D0 denominator is master_samples.tsv, NOT
+#     patient_infection_sequence.tsv's day==0 rows. The latter includes every
+#     enrolled patient with a Day-0 sample RECORDED, regardless of whether
+#     that sample ever produced usable genotype data — this gap can be large
+#     and arm-specific (confirmed case: one OPRA arm lost ~34% of its Day-0
+#     samples to sequencing failure, cross-checked directly against
+#     mhap_filtered.tsv). Only sequenced samples can ever produce an IBD or
+#     Pv3Rs result, so only sequenced samples belong in this denominator.
+#
+#     "Recurred" status itself is still sourced from
+#     patient_infection_sequence.tsv (any day>0 row, sequenced or not) — this
+#     is a clinical fact independent of sequencing success. A patient with a
+#     sequenced D0 who recurred clinically but whose recurrence sample failed
+#     to sequence correctly lands in "Recurred, unclassifiable" (no pair could
+#     ever be built for them), never in "Did not recur".
+#
 #   emoi_spaghetti_by_episode_<TRIAL>.png
 #     eMOI trajectory per individual, x-axis = infection episode index (0=D0,
 #     1=first recurrence, ...) rather than calendar day. Bold line = arm
 #     median, shown only where N>=5 contribute. Panel N = individuals who
-#     actually recurred (>=1 episode beyond D0), not all Day 0-genotyped.
-#     Panels are forced to a single row (nrow=1) with square-ish dimensions.
+#     actually recurred (>=1 episode beyond D0). Panels forced to a single
+#     row (nrow=1) with square-ish dimensions.
 #
 # NOTE: relapse_connected_dots_first_rec_<TRIAL>.png and
 # relapse_averted_pv3rs_<TRIAL>.png are DISABLED — the functions remain
@@ -79,6 +99,7 @@
 #     con_dir  $BASE/output-analysis/consecutive-pairs \
 #     figs_dir $BASE/output-analysis/figures \
 #     pis      $BASE/input-files/patient_level_tables/patient_infection_sequence.tsv \
+#     master_samples $BASE/output-analysis/mytrial/master_samples.tsv \
 #     arm_group "ALPQ:PQ" "CQPQ:PQ"
 #
 #   # First recurrence only (same underlying consecutive schema, aliased to bl)
@@ -87,6 +108,7 @@
 #     con_file $BASE/output-analysis/consecutive-pairs/per_infection_classifications_first_rec_only.tsv \
 #     figs_dir $BASE/output-analysis/figures \
 #     pis      $BASE/input-files/patient_level_tables/patient_infection_sequence.tsv \
+#     master_samples $BASE/output-analysis/mytrial/master_samples.tsv \
 #     arm_group "ALPQ:PQ" "CQPQ:PQ" \
 #     first_rec_as_baseline on
 # =============================================================================
@@ -113,36 +135,39 @@ safe_quant <- function(x, p) {
 }
 # IMPORTANT: OPRA (and possibly other trials) use purely numeric patient IDs
 # (e.g. "202135"). readr auto-detects such columns as double, while IDs
-# sourced from patient_infection_sequence.tsv are explicitly cast to
-# character. ANY join on "id" between a classification data frame and a
-# pis-derived data frame MUST coerce both sides to character first, or dplyr
-# will error with "incompatible types". Use this helper everywhere such a
-# join happens.
+# sourced from patient_infection_sequence.tsv / master_samples.tsv are
+# explicitly cast to character. ANY join on "id" between data frames from
+# different sources MUST coerce both sides to character first, or dplyr will
+# error with "incompatible types". Use this helper everywhere such a join
+# happens.
 as_id_chr <- function(x) as.character(x)
 
 # ── CLI parsing ───────────────────────────────────────────────────────────────
 parse_cli <- function(args) {
   known_flags <- c("trial","pair_mode","bl_dir","con_dir","bl_file","con_file",
-                    "figs_dir","pis","min_rec","arm_group","first_rec_as_baseline")
+                    "figs_dir","pis","min_rec","arm_group","first_rec_as_baseline",
+                    "master_samples")
   out <- list(trial = NULL, pair_mode = NULL,
               bl_dir = NULL, con_dir = NULL,
               bl_file = NULL, con_file = NULL,
               figs_dir = NULL, pis = NULL,
               min_rec = NULL,
               arm_group = NULL,
-              first_rec_as_baseline = NULL)
+              first_rec_as_baseline = NULL,
+              master_samples = NULL)
   i <- 1L
   while (i <= length(args)) {
     a <- tolower(args[i])
-    if (a == "trial"     && i+1 <= length(args)) { out$trial     <- tolower(args[i+1]); i <- i+2; next }
-    if (a == "pair_mode" && i+1 <= length(args)) { out$pair_mode <- tolower(args[i+1]); i <- i+2; next }
-    if (a == "bl_dir"    && i+1 <= length(args)) { out$bl_dir    <- args[i+1];          i <- i+2; next }
-    if (a == "con_dir"   && i+1 <= length(args)) { out$con_dir   <- args[i+1];          i <- i+2; next }
-    if (a == "bl_file"   && i+1 <= length(args)) { out$bl_file   <- args[i+1];          i <- i+2; next }
-    if (a == "con_file"  && i+1 <= length(args)) { out$con_file  <- args[i+1];          i <- i+2; next }
-    if (a == "figs_dir"  && i+1 <= length(args)) { out$figs_dir  <- args[i+1];          i <- i+2; next }
-    if (a == "pis"       && i+1 <= length(args)) { out$pis       <- args[i+1];          i <- i+2; next }
-    if (a == "min_rec"   && i+1 <= length(args)) { out$min_rec   <- args[i+1];          i <- i+2; next }
+    if (a == "trial"          && i+1 <= length(args)) { out$trial          <- tolower(args[i+1]); i <- i+2; next }
+    if (a == "pair_mode"      && i+1 <= length(args)) { out$pair_mode      <- tolower(args[i+1]); i <- i+2; next }
+    if (a == "bl_dir"         && i+1 <= length(args)) { out$bl_dir         <- args[i+1];          i <- i+2; next }
+    if (a == "con_dir"        && i+1 <= length(args)) { out$con_dir        <- args[i+1];          i <- i+2; next }
+    if (a == "bl_file"        && i+1 <= length(args)) { out$bl_file        <- args[i+1];          i <- i+2; next }
+    if (a == "con_file"       && i+1 <= length(args)) { out$con_file       <- args[i+1];          i <- i+2; next }
+    if (a == "figs_dir"       && i+1 <= length(args)) { out$figs_dir       <- args[i+1];          i <- i+2; next }
+    if (a == "pis"            && i+1 <= length(args)) { out$pis            <- args[i+1];          i <- i+2; next }
+    if (a == "min_rec"        && i+1 <= length(args)) { out$min_rec        <- args[i+1];          i <- i+2; next }
+    if (a == "master_samples" && i+1 <= length(args)) { out$master_samples <- args[i+1];          i <- i+2; next }
     if (a == "first_rec_as_baseline" && i+1 <= length(args)) { out$first_rec_as_baseline <- tolower(args[i+1]); i <- i+2; next }
     if (a == "arm_group") {
       vals <- character(0); j <- i + 1L
@@ -193,11 +218,12 @@ apply_arm_group <- function(df) {
   df
 }
 
-bl_dir   <- cli$bl_dir   %||% file.path("output-analysis", "baseline-to-recurrence")
-con_dir  <- cli$con_dir  %||% file.path("output-analysis", "consecutive-pairs")
-figs_dir <- cli$figs_dir %||% file.path("output-analysis", "figures")
-fp_pis   <- cli$pis      %||% file.path("input-files", "patient_level_tables",
-                                         "patient_infection_sequence.tsv")
+bl_dir     <- cli$bl_dir   %||% file.path("output-analysis", "baseline-to-recurrence")
+con_dir    <- cli$con_dir  %||% file.path("output-analysis", "consecutive-pairs")
+figs_dir   <- cli$figs_dir %||% file.path("output-analysis", "figures")
+fp_pis     <- cli$pis      %||% file.path("input-files", "patient_level_tables",
+                                           "patient_infection_sequence.tsv")
+fp_master  <- cli$master_samples %||% NULL
 
 dir.create(figs_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -216,6 +242,7 @@ message(">> trial: ", TRIAL_UP, " | pair_mode: ", pair_mode)
 message(">> bl:   ", fp_bl)
 message(">> con:  ", fp_con)
 message(">> figs_dir: ", figs_dir)
+message(">> master_samples: ", if (is.null(fp_master)) "(not supplied — individual_outcomes_stacked will be skipped)" else fp_master)
 if (first_rec_as_baseline == "on")
   message(">> first_rec_as_baseline: on — con data will be aliased into the baseline-schema slot")
 
@@ -928,13 +955,6 @@ plot_emoi_over_time <- function(fp_pis, trial_up) {
 
 # =============================================================================
 # eMOI trajectory by infection episode — "spaghetti" plot
-# X-axis = infection episode index (0 = D0, 1 = first recurrence, ...), derived
-# purely from chronological rank within each patient (day order). Bold line =
-# arm median at each episode, drawn only where N >= min_n_trend individuals
-# contribute. Panel N = individuals who actually recurred (>=1 episode beyond
-# D0), not all Day 0-genotyped individuals. Panels forced to a single row
-# (nrow=1) with dimensions chosen to keep them roughly square rather than
-# vertically stretched.
 # =============================================================================
 plot_emoi_spaghetti <- function(fp_pis, trial_up, min_n_trend = 5L, max_episode = NULL) {
   if (!file.exists(fp_pis)) {
@@ -1004,32 +1024,32 @@ plot_emoi_spaghetti <- function(fp_pis, trial_up, min_n_trend = 5L, max_episode 
 
 # =============================================================================
 # Individual-level classification outcome — stacked bar (headline figure)
-# One bar per treatment arm. Every Day 0-genotyped individual is placed into
-# exactly one of five mutually exclusive categories:
-#   Relapse / Reinfection / Indeterminate / Recurred-unclassifiable
-#   (no valid pair) / Did not recur
 #
-# "Did not recur" and "Recurred, unclassifiable" are derived purely from
-# patient_infection_sequence.tsv (day > 0 presence/absence) and do NOT depend
-# on which classification data is supplied — correct whether df is
-# first-rec-only (bl, aliased) or all-recurrences (con) data.
+# D0 population = master_samples.tsv (patients whose Day-0 sample was
+# SUCCESSFULLY SEQUENCED). REQUIRED — this function refuses to run without it,
+# rather than silently falling back to the wrong (inflated) denominator from
+# patient_infection_sequence.tsv's day==0 rows, which includes every enrolled
+# patient with a Day-0 sample recorded regardless of sequencing success.
 #
-# df: EITHER bl (first-rec-only, aliased) OR con (all-recurrences). Both
-# valid. mode_label distinguishes the two in the output filename/title.
-#
-# NOTE: OPRA (and possibly other trials) use purely numeric patient IDs,
-# which readr auto-detects as double in the classification TSV while
-# patient_infection_sequence.tsv's id is character — both sides are
-# explicitly coerced with as_id_chr() before the join to avoid a type
-# mismatch error.
+# "Recurred" status is still sourced from patient_infection_sequence.tsv (any
+# day>0 row, sequenced or not) — a clinical fact independent of sequencing
+# success. A patient with a sequenced D0 who recurred clinically but whose
+# recurrence sample failed to sequence correctly lands in "Recurred,
+# unclassifiable" (no pair could ever be built), never "Did not recur".
 # =============================================================================
-plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = "all_rec") {
+plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = "all_rec", fp_master = NULL) {
   if (is.null(df) || !has_cols(df, c("id","treatment_arm","pv3rs_L"))) {
     message(">> individual_outcomes_stacked (", mode_label, "): no classification data — skipping")
     return(invisible(NULL))
   }
   if (!file.exists(fp_pis)) {
     message(">> individual_outcomes_stacked: patient_infection_sequence.tsv not found — skipping")
+    return(invisible(NULL))
+  }
+  if (is.null(fp_master) || !file.exists(fp_master)) {
+    message(">> individual_outcomes_stacked: master_samples <path> is REQUIRED for this plot ",
+            "(D0 population must be restricted to sequenced samples, not just enrolled/recorded ",
+            "samples) — skipping. Pass e.g. master_samples <trial_out_dir>/master_samples.tsv")
     return(invisible(NULL))
   }
 
@@ -1043,7 +1063,16 @@ plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = 
     filter(is.finite(day))
   if (!nrow(pis)) { message(">> individual_outcomes_stacked: no pis rows for ", trial_up); return(invisible(NULL)) }
 
-  d0_pop <- pis %>% filter(day == 0) %>% distinct(id, treatment_arm)
+  master <- read_tsv(fp_master, show_col_types = FALSE) %>%
+    filter(toupper(trial) == trial_up, day == 0) %>%
+    transmute(
+      id            = as_id_chr(patient_id),
+      treatment_arm = vapply(as.character(treatment_arm), map_arm_group, character(1))
+    ) %>%
+    distinct(id, treatment_arm)
+  d0_pop <- master
+  message(sprintf(">> individual_outcomes_stacked: D0 population = %d sequenced patients (from master_samples.tsv)", nrow(d0_pop)))
+
   recurred_ids <- pis %>% filter(day > 0) %>% pull(id) %>% unique()
 
   patient_status <- df %>%
@@ -1102,7 +1131,7 @@ plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = 
     scale_x_discrete(labels = arm_lbl_vec) +
     scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20),
                        expand = expansion(mult = c(0, 0.02))) +
-    labs(x = NULL, y = "% of Day 0-genotyped individuals",
+    labs(x = NULL, y = "% of Day 0-sequenced individuals",
          title = sprintf("%s — individual-level recurrence outcome (%s)", trial_up, mode_title)) +
     theme_pub +
     theme(legend.position = "right", panel.grid.major.x = element_blank())
@@ -1395,7 +1424,7 @@ plot_emoi_spaghetti(fp_pis, TRIAL_UP)
 
 outcome_df   <- if (!is.null(con)) con else bl
 outcome_mode <- if (!is.null(con)) "all_rec" else if (bl_is_first_rec) "first_rec" else "baseline"
-plot_individual_outcomes_stacked(outcome_df, fp_pis, TRIAL_UP, outcome_mode)
+plot_individual_outcomes_stacked(outcome_df, fp_pis, TRIAL_UP, outcome_mode, fp_master)
 
 # ── 6. Multi-panel summaries ──────────────────────────────────────────────────
 if (requireNamespace("patchwork", quietly = TRUE)) {
@@ -1506,8 +1535,7 @@ build_cd_points <- function(df, day_col) {
 }
 
 # NOTE: plot_connected_dots_first_rec() remains defined but is not called
-# below (see "DISABLED" near the end of the script). Left intact in case you
-# want to re-enable it.
+# below (see "DISABLED" near the end of the script).
 plot_connected_dots_first_rec <- function(bl) {
   if (is.null(bl)) return(invisible(NULL))
   rec_col <- if ("recurrence_no" %in% names(bl)) "recurrence_no" else NULL
@@ -1757,281 +1785,3 @@ plot_patient_timelines <- function(con, min_steps = 2L) {
   ph <- max(6, sum(heights) * 0.35 + 2)
 
   fname <- sprintf("patient_timelines_%s.png", TRIAL_UP)
-  ggsave(file.path(figs_dir, fname), combined,
-         width = pw, height = ph, dpi = 300, bg = "white", limitsize = FALSE)
-  message(">> wrote: ", fname)
-  invisible(combined)
-}
-
-plot_patient_timelines(con, min_steps = 2L)
-
-# ── 9. Reinfection rank plot — first-rec-only baseline data only ─────────────
-plot_reinfection_rank <- function(df) {
-  if (!requireNamespace("patchwork", quietly = TRUE)) {
-    message(">> patchwork required for reinfection rank plot — skipping")
-    return(invisible(NULL))
-  }
-  if (is.null(df)) return(invisible(NULL))
-  need <- c("treatment_arm", "pv3rs_I")
-  missing_cols <- setdiff(need, names(df))
-  if (length(missing_cols)) {
-    message(">> reinfection rank plot: missing columns — ",
-            paste(missing_cols, collapse = ", "), " — skipping")
-    return(invisible(NULL))
-  }
-  series_pal <- c("Pv3Rs" = "#377EB8")
-  d <- df %>%
-    filter(!is.na(treatment_arm)) %>%
-    mutate(
-      p_reinf_pv3rs = suppressWarnings(as.numeric(pv3rs_I)),
-      p_reinf_mid   = dplyr::case_when(
-        is.finite(p_reinf_pv3rs) ~ p_reinf_pv3rs,
-        TRUE ~ NA_real_
-      )
-    ) %>%
-    group_by(treatment_arm) %>%
-    mutate(rank = rank(p_reinf_mid, ties.method = "first", na.last = "keep")) %>%
-    ungroup() %>%
-    filter(is.finite(rank))
-  if (!nrow(d)) return(invisible(NULL))
-
-  arm_levels <- sort(unique(na.omit(as.character(d$treatment_arm))))
-  segs <- d %>%
-    group_by(treatment_arm, rank) %>%
-    summarise(xmin = min(rank, na.rm = TRUE),
-              xmax = max(rank, na.rm = TRUE), .groups = "drop") %>%
-    mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
-  d_long <- d %>%
-    tidyr::pivot_longer(cols = starts_with("p_reinf_pv3rs"),
-                        names_to = "series", values_to = "p_reinf") %>%
-    mutate(series        = factor("Pv3Rs", levels = names(series_pal)),
-           treatment_arm = factor(treatment_arm, levels = arm_levels)) %>%
-    filter(is.finite(p_reinf))
-  if (!nrow(d_long)) return(invisible(NULL))
-
-  arm_n <- d %>%
-    group_by(treatment_arm) %>%
-    summarise(n = dplyr::n(), .groups = "drop") %>%
-    mutate(treatment_arm = factor(treatment_arm, levels = arm_levels))
-
-  arm_plots <- lapply(seq_along(arm_levels), function(i) {
-    arm     <- arm_levels[i]
-    show_lg <- i == length(arm_levels)
-    pd <- d_long %>% filter(treatment_arm == arm)
-    sg <- segs   %>% filter(treatment_arm == arm)
-    an <- arm_n  %>% filter(treatment_arm == arm)
-    ggplot() +
-      geom_segment(data = sg,
-                   aes(x = xmin, xend = xmax, y = rank, yend = rank),
-                   colour = "grey60", linetype = "dotted", linewidth = 0.5) +
-      geom_point(data = pd,
-                 aes(x = p_reinf, y = rank, colour = series),
-                 size = 1.8, alpha = 0.8) +
-      geom_text(data = an,
-                aes(x = Inf, y = -Inf, label = sprintf("N=%d", n)),
-                hjust = 1.1, vjust = -0.5, size = 2.5, colour = "grey45",
-                inherit.aes = FALSE) +
-      scale_colour_manual(values = series_pal, name = NULL) +
-      scale_x_continuous(limits = c(0,1), breaks = seq(0,1,0.25)) +
-      labs(title = arm,
-           x = "Reinfection probability",
-           y = if (i == 1) "First recurrence ranked\nby mean reinfection estimate" else NULL) +
-      theme_pub +
-      theme(legend.position  = if (show_lg) "right" else "none",
-            axis.text.y      = element_text(size = 6),
-            axis.title.y     = if (i == 1) element_text() else element_blank(),
-            plot.title       = element_text(face = "bold", size = 10, hjust = 0.5))
-  })
-
-  combined <- patchwork::wrap_plots(arm_plots, nrow = 1) +
-    patchwork::plot_annotation(
-      title    = sprintf("%s \u2014 First recurrence: reinfection probability (Pv3Rs)", TRIAL_UP),
-      subtitle = "Patients ranked within each arm by reinfection probability",
-      theme = theme(plot.title    = element_text(size = 13, face = "bold"),
-                    plot.subtitle = element_text(size = 8,  colour = "grey40"))
-    )
-  fname <- sprintf("reinfection_rank_first_rec_%s.png", TRIAL_UP)
-  ggsave(file.path(figs_dir, fname), combined,
-         width = length(arm_levels) * 3.2 + 1.5, height = 6,
-         dpi = 300, bg = "white", limitsize = FALSE)
-  message(">> wrote: ", fname)
-  invisible(combined)
-}
-
-if (bl_is_first_rec) {
-  plot_reinfection_rank(bl)
-}
-
-# ── 10. Relapse-averted estimate plot ────────────────────────────────────────
-# NOTE: plot_relapse_averted() remains defined but is not called below (see
-# "DISABLED"). Left intact in case you want to re-enable it.
-plot_relapse_averted <- function(df,
-                                  class_col     = "pv3rs_call",
-                                  relapse_vals  = c("relapse"),
-                                  method_label  = "Pv3Rs",
-                                  ref_arm       = NULL,
-                                  pq_arms       = NULL,
-                                  arm_enrolled  = NULL) {
-  if (!requireNamespace("patchwork", quietly = TRUE)) {
-    message(">> patchwork required for relapse_averted plot — skipping")
-    return(invisible(NULL))
-  }
-  if (is.null(df) || !has_cols(df, c("treatment_arm", class_col, "id")))
-    return(invisible(NULL))
-
-  if (is.null(pq_arms)) {
-    message(">> relapse_averted: pq_arms not supplied — all arms used in Panel B")
-  }
-
-  dat <- df %>%
-    filter(!is.na(.data[[class_col]]),
-           !is.na(treatment_arm),
-           .data[[class_col]] %in% c(relapse_vals, "reinfection")) %>%
-    group_by(treatment_arm) %>%
-    summarise(
-      n_relapse    = sum(.data[[class_col]] %in% relapse_vals),
-      n_classified = dplyr::n(),
-      n_indiv      = dplyr::n_distinct(id),
-      prop         = n_relapse / n_classified,
-      .groups      = "drop"
-    )
-
-  if (!nrow(dat) || nrow(dat) < 2) {
-    message(">> relapse_averted: fewer than 2 arms with data — skipping")
-    return(invisible(NULL))
-  }
-
-  if (is.null(ref_arm)) {
-    non_pq_dat <- if (!is.null(pq_arms))
-      dat %>% filter(!treatment_arm %in% pq_arms)
-    else
-      dat
-    if (!nrow(non_pq_dat)) non_pq_dat <- dat
-    ref_arm <- non_pq_dat$treatment_arm[which.max(non_pq_dat$prop)]
-    message(sprintf(">> relapse_averted: reference arm (non-PQ, highest relapse) = '%s'",
-                    ref_arm))
-  }
-  if (!ref_arm %in% dat$treatment_arm) {
-    message(">> relapse_averted: ref_arm '", ref_arm, "' not in data — skipping")
-    return(invisible(NULL))
-  }
-
-  p_ref <- dat$prop[dat$treatment_arm == ref_arm]
-
-  pq_in_data <- if (!is.null(pq_arms))
-    dat %>% filter(treatment_arm %in% pq_arms)
-  else
-    dat %>% filter(treatment_arm != ref_arm)
-
-  if (!nrow(pq_in_data)) {
-    message(">> relapse_averted: no PQ arms found in data — skipping Panel B")
-    return(invisible(NULL))
-  }
-
-  get_enrolled <- function(arm) {
-    if (!is.null(arm_enrolled) && arm %in% names(arm_enrolled))
-      as.integer(arm_enrolled[[arm]])
-    else
-      dat$n_classified[dat$treatment_arm == arm]
-  }
-
-  averted <- pq_in_data %>%
-    rowwise() %>%
-    mutate(
-      p_diff        = p_ref - prop,
-      n_enrolled    = get_enrolled(treatment_arm),
-      n_averted_est = p_diff * n_enrolled
-    ) %>%
-    ungroup()
-
-  extra_note <- if (!is.null(arm_enrolled))
-    "Enrolled N supplied — extrapolated to full arm"
-  else
-    "No enrolled N supplied — estimate uses classified pairs only (conservative)"
-
-  arm_levels <- c(ref_arm, setdiff(dat$treatment_arm, ref_arm))
-  arm_pal    <- get_arm_pal(arm_levels)
-  pA <- ggplot(dat %>% mutate(treatment_arm = factor(treatment_arm, arm_levels)),
-               aes(treatment_arm, prop, colour = treatment_arm)) +
-    geom_point(size = 4) +
-    geom_text(aes(label = sprintf("%d/%d", n_relapse, n_classified),
-                  vjust = ifelse(prop >= 0.92, 2.2, -1.5)),
-              size = 2.8, colour = "grey35") +
-    geom_hline(yintercept = p_ref, linetype = "dashed",
-               colour = arm_pal[[ref_arm]], linewidth = 0.7, alpha = 0.6) +
-    scale_colour_manual(values = arm_pal, guide = "none") +
-    scale_y_continuous(labels = percent, limits = c(0, 1.07),
-                       breaks = seq(0, 1, 0.25)) +
-    labs(x = "Treatment arm",
-         y = "Proportion classified as relapse",
-         title = sprintf("A  Relapse proportion by arm — %s", method_label),
-         subtitle = sprintf("Reference arm: %s (dashed line)", ref_arm)) +
-    theme_pub + theme(axis.text.x = element_text(angle = 30, hjust = 1))
-
-  pq_arm_levels <- intersect(arm_levels, averted$treatment_arm)
-  pB <- ggplot(averted %>% mutate(treatment_arm = factor(treatment_arm, pq_arm_levels)),
-               aes(treatment_arm, n_averted_est, colour = treatment_arm)) +
-    geom_point(size = 4) +
-    geom_text(aes(label = sprintf("~%.0f", n_averted_est)),
-              vjust = ifelse(averted$n_averted_est >= 0, -1.5, 2.2),
-              size = 2.8, colour = "grey35") +
-    geom_hline(yintercept = 0, linetype = "solid",
-               colour = "grey60", linewidth = 0.4) +
-    scale_colour_manual(values = arm_pal[pq_arm_levels], guide = "none") +
-    scale_y_continuous(labels = function(x) round(x),
-                       expand = expansion(mult = c(0.15, 0.15))) +
-    labs(x = "Treatment arm (PQ only)",
-         y = "Estimated relapses averted\n(vs reference arm)",
-         title = "B  Estimated relapses averted (PQ arms only)",
-         subtitle = paste0(extra_note, "\nNon-PQ arms excluded — cannot clear hypnozoites")) +
-    theme_pub + theme(axis.text.x = element_text(angle = 30, hjust = 1))
-
-  combined <- (pA | pB) +
-    patchwork::plot_annotation(
-      title    = sprintf("%s \u2014 Relapse burden and averted relapses (%s)",
-                         TRIAL_UP, method_label),
-      subtitle = paste0(
-        "\u26a0\ufe0f  EXPLORATORY ESTIMATE — interpret with caution:\n",
-        "(1) Classified subset is biased toward PQ non-responders ",
-        "(most PQ patients never recurred and have no pair).\n",
-        "(2) Assumes classification proportions in classified pairs represent ",
-        "the full enrolled arm — this assumption is not validated.\n",
-        "(3) CIs are binomial on classified pairs only, not on enrolled population."
-      ),
-      theme = theme(
-        plot.title    = element_text(size = 13, face = "bold"),
-        plot.subtitle = element_text(size = 7.5, colour = "#8B4513",
-                                     lineheight = 1.3)
-      )
-    )
-
-  fname <- sprintf("relapse_averted_%s_%s.png", tolower(method_label), TRIAL_UP)
-  ggsave(file.path(figs_dir, fname), combined,
-         width = 10, height = 5.5, dpi = 300, bg = "white")
-  message(">> wrote: ", fname)
-  invisible(combined)
-}
-
-# DISABLED — see note at top of script:
-# arm_n_enrolled <- NULL
-# if (bl_is_first_rec && !is.null(bl)) {
-#   if (is.null(arm_n_enrolled) && "treatment_arm" %in% names(bl)) {
-#     d0_enrolled <- bl %>%
-#       filter(if ("recurrence_no" %in% names(.)) recurrence_no == 1L else TRUE) %>%
-#       count(treatment_arm) %>%
-#       tibble::deframe()
-#     arm_n_enrolled <- d0_enrolled
-#   }
-#   plot_relapse_averted(
-#     df           = bl,
-#     class_col    = "pv3rs_call",
-#     relapse_vals = c("relapse"),
-#     method_label = "Pv3Rs",
-#     ref_arm      = NULL,
-#     pq_arms      = if ("PQ" %in% arm_group_map) "PQ" else NULL,
-#     arm_enrolled = arm_n_enrolled
-#   )
-# }
-
-# ── END ───────────────────────────────────────────────────────────────────────
-cat(sprintf(">> %s figures written to:\n   %s\n", TRIAL_UP, figs_dir))
