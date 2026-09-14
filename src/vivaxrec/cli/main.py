@@ -147,7 +147,12 @@ Outputs:
 Only samples within a patient's longest unbroken, D0-anchored recurrence chain
 are used for pairwise analysis. Patients missing a true Day 0 are excluded
 entirely; patients with a gap partway through their recurrence sequence are
-truncated at the gap. See excluded_patients_chain_validity.tsv for details."""
+truncated at the gap. See excluded_patients_chain_validity.tsv for details.
+
+NOTE: patient_infection_sequence.tsv reflects trial metadata (samples
+RECORDED as taken), not sequencing success. Use master_samples.tsv (from the
+prep step) wherever you need "successfully sequenced" as the population —
+the gap between the two can be large and arm-specific."""
     ),
     "prep": (
         cmd_prep,
@@ -161,7 +166,12 @@ Options:
   --out_dir  DIR    Root output directory (default: vivaxrec_inputs)
 
 Outputs per trial found in the data:
-  master_samples.tsv
+  master_samples.tsv            <- the authoritative "successfully sequenced"
+                                    sample list; only samples with actual
+                                    genotype output in mhap_filtered.tsv (and
+                                    passing the locus-count QC threshold) are
+                                    included. Required input to `plot`'s
+                                    individual_outcomes_stacked figure.
   per_sample_locus_alleles.tsv
   d0_dr_pairs.tsv
   allele_freq_from_D0.tsv"""
@@ -321,33 +331,45 @@ Flags are passed as space-separated key value pairs (not --flag style):
   con_file    PATH                      Specific consecutive TSV (overrides con_dir)
   figs_dir    DIR                       Output figures directory
   pis         PATH                      patient_infection_sequence.tsv
+  master_samples PATH                   <trial>/master_samples.tsv (from the prep
+                                         step). REQUIRED for individual_outcomes_stacked
+                                         — this is the only source that reliably
+                                         distinguishes "sample recorded" from
+                                         "sample successfully sequenced"; without
+                                         it, that plot is skipped rather than
+                                         silently using the wrong (inflated)
+                                         denominator.
   min_rec     INT                       Min. recurrences for patient timeline plot (default: 2)
 
-Reporting-only arm grouping (matches whatever was used at classify time, or can
-differ — this script recomputes it independently, so it works even against
-classify output that was NOT itself run with arm_group):
+Reporting-only arm grouping (recomputed independently here — works even
+against classify output that was not itself run with arm_group). Applied to
+bl, con, patient_infection_sequence.tsv, AND master_samples.tsv:
   arm_group   "ARM:GROUP" ["ARM:GROUP" ...]
               e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"
               e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"
 
 First-recurrence-only plotting WITHOUT ever running classify with pair_mode
 baseline. Point con_file at a *_first_rec_only.tsv (produced by classify with
-pair_mode consecutive first_rec_only on) and set this flag on — its columns
-are aliased into the schema the reinfection-rank/connected-dots/relapse-averted
-plots expect. Run the script a SECOND time (this flag off, con_dir/con_file
-pointed at the full per_infection_classifications.tsv) for the all-recurrences
-plots, including the individual-outcomes stacked bar (which needs full data):
+pair_mode consecutive first_rec_only on) and set this flag on:
   first_rec_as_baseline   on|off   (default: off)
+Run the script a SECOND time (this flag off, con_dir/con_file pointed at the
+full per_infection_classifications.tsv) for the all-recurrences plots.
 
 Headline outputs (generated automatically):
-  individual_outcomes_stacked_<TRIAL>.png   Requires all-recurrences con data
-  emoi_spaghetti_by_episode_<TRIAL>.png     eMOI by episode index, not calendar day
+  individual_outcomes_stacked_<TRIAL>_<MODE>.png   D0 population = SEQUENCED
+                                                    samples only (master_samples.tsv)
+  emoi_spaghetti_by_episode_<TRIAL>.png            eMOI by episode index, not calendar day
+
+DISABLED by default (functions remain defined, not called):
+  relapse_connected_dots_first_rec_<TRIAL>.png
+  relapse_averted_pv3rs_<TRIAL>.png
 
 Example — all recurrences:
   vivaxrec plot trial opra pair_mode consecutive \\
     con_dir  /data/recurrence-classification/opra/consecutive-pairs \\
     figs_dir /data/recurrence-classification/opra/figures-all-rec \\
     pis      /data/patient_level_tables/patient_infection_sequence.tsv \\
+    master_samples /data/recurrence-classification/opra/master_samples.tsv \\
     arm_group "ALPQ:PQ" "CQPQ:PQ"
 
 Example — first recurrence only:
@@ -355,6 +377,7 @@ Example — first recurrence only:
     con_file /data/recurrence-classification/opra/consecutive-pairs/per_infection_classifications_first_rec_only.tsv \\
     figs_dir /data/recurrence-classification/opra/figures-first-rec \\
     pis      /data/patient_level_tables/patient_infection_sequence.tsv \\
+    master_samples /data/recurrence-classification/opra/master_samples.tsv \\
     arm_group "ALPQ:PQ" "CQPQ:PQ" \\
     first_rec_as_baseline on"""
     ),
