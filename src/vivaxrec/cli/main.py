@@ -67,7 +67,6 @@ def cmd_plot(extra):
 
 
 def cmd_run_all(extra):
-    # Extract --trials; remaining flags forwarded to each step
     trials = []
     remaining = []
     i = 0
@@ -109,7 +108,6 @@ def cmd_run_all(extra):
     print(f"\n[vivaxrec] ✓ Pipeline complete for trial(s): {', '.join(trials)}")
 
 
-# Subcommand registry: name -> (function, one-line help, full description)
 SUBCOMMANDS = {
     "standardize": (
         cmd_standardize,
@@ -144,13 +142,12 @@ Outputs:
   consecutive_pairs_with_relatedness.tsv
   baseline_samples.tsv
   summary_by_trial_site.tsv
+  excluded_patients_chain_validity.tsv
 
-NOTE: for exclude_substituted_first to work in pair_mode=baseline in the
-classify step, baseline_pairs_with_relatedness.tsv must carry a
-baseline_time_point column (the true time_point label of whichever sample was
-used as each patient's baseline, e.g. "D0" or "DRP1" if substituted). If this
-column is absent, exclude_substituted_first is a no-op in baseline mode
-(consecutive mode has no such dependency)."""
+Only samples within a patient's longest unbroken, D0-anchored recurrence chain
+are used for pairwise analysis. Patients missing a true Day 0 are excluded
+entirely; patients with a gap partway through their recurrence sequence are
+truncated at the gap. See excluded_patients_chain_validity.tsv for details."""
     ),
     "prep": (
         cmd_prep,
@@ -266,10 +263,9 @@ Prior / model:
   pq_arms         ARM [ARM]    PQ treatment arm names (space-separated)
 
 Drug-specific window/prior overrides (CHANGES Pv3Rs posteriors — use when arms
-use drugs with meaningfully different half-lives, e.g. AL vs CQ). Any arm not
-listed under al_arms/cq_arms uses the global window_days/pC/pL/max_recrud_days.
-Composes independently with pq_arms — e.g. a patient in ALPQ gets both the
-AL window shape AND the PQ relapse-prior discount at once:
+use drugs with meaningfully different half-lives, e.g. AL vs CQ). Composes
+independently with pq_arms — e.g. a patient in ALPQ gets both the AL window
+shape AND the PQ relapse-prior discount:
   al_arms              ARM [ARM]   Arm names to receive the AL-specific overrides below
   cq_arms              ARM [ARM]   Arm names to receive the CQ-specific overrides below
   window_days_al       INT INT     w1 w2 override for al_arms (default: falls back to window_days)
@@ -279,34 +275,24 @@ AL window shape AND the PQ relapse-prior discount at once:
   max_recrud_days_al   INT         Recrudescence reassignment threshold override for al_arms
   max_recrud_days_cq   INT         Recrudescence reassignment threshold override for cq_arms
 
-Reporting-only arm grouping (does NOT affect classification — only adds an
-additional summary_by_arm_group*.tsv alongside the existing per-arm summary).
-Arms not listed keep their own name as their group label:
+Reporting-only arm grouping (does NOT affect classification):
   arm_group   "ARM:GROUP" ["ARM:GROUP" ...]
               e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"      (AL, CQ stay separate)
               e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"   (Control stays separate)
 
-Substituted-baseline reporting exclusion. Some patients are missing a true D0
-but have a genotyped first recurrence (R1) and a directly consecutive second
-recurrence (R2); upstream processing substitutes R1 as a stand-in baseline so
-the R1->R2 interval can still be analysed. This is treatment-equivalent where
-every recurrence gets the same regimen (e.g. IMPROV — leave off), but NOT
-treatment-equivalent where only the true enrolment treatment is directly
-observed (e.g. OPRA, where later doses are unsupervised — turn on):
+Substituted-baseline reporting exclusion (OPRA-relevant; PQ unsupervised after
+first recurrence there, so a substituted baseline is not treatment-equivalent):
   exclude_substituted_first   on|off   Suppress the first interval from reporting
                                        for patients with a substituted (non-true-
-                                       D0) baseline (default: off). Does NOT
-                                       remove the substituted episode from Pv3Rs's
-                                       joint model — later intervals for that
-                                       patient are unaffected.
+                                       D0) baseline (default: off).
 
 Subset analyses (each triggers an independent Pv3Rs re-run on the restricted data):
   first_rec_only  on|off       Re-run on D0 + first recurrence only (default: off)
   mono_only       on|off       Re-run on patients with monoclonal D0 only (default: off)
-  mono_emoi_th    FLOAT        eMOI threshold for monoclonal definition (default: 1.1; accounts for MOIRE rounding)
+  mono_emoi_th    FLOAT        eMOI threshold for monoclonal definition (default: 1.1)
 
-Example — OPRA, consecutive: PQ arms grouped (AL/CQ stay separate), AL/CQ
-half-life-specific windows, and substituted-baseline exclusion on:
+Example — OPRA, all recurrences + first recurrence in one run, PQ arms
+grouped (AL/CQ stay separate), AL/CQ half-life windows, substitution exclusion:
   vivaxrec classify trial opra pair_mode consecutive \\
     input_dir /data/patient_level_tables \\
     geno /data/mhap_filtered.tsv \\
@@ -316,18 +302,8 @@ half-life-specific windows, and substituted-baseline exclusion on:
     arm_group "ALPQ:PQ" "CQPQ:PQ" \\
     al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \\
     cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \\
-    exclude_substituted_first on
-
-Example — IMPROV, consecutive: PQ arms grouped (Control stays separate);
-exclude_substituted_first left off (PQ given at every recurrence, so the
-substitution is treatment-equivalent there):
-  vivaxrec classify trial improv pair_mode consecutive \\
-    input_dir /data/patient_level_tables \\
-    geno /data/mhap_filtered.tsv \\
-    master_dir /data/recurrence-classification \\
-    out_dir /data/recurrence-classification/improv/consecutive-pairs \\
-    pq_arms "7-day" "14-day" \\
-    arm_group "7-day:PQ" "14-day:PQ\""""
+    exclude_substituted_first on \\
+    first_rec_only on"""
     ),
     "plot": (
         cmd_plot,
@@ -341,15 +317,46 @@ Flags are passed as space-separated key value pairs (not --flag style):
   pair_mode   baseline|consecutive|both Which outputs to plot (default: both)
   bl_dir      DIR                       Baseline classification output directory
   con_dir     DIR                       Consecutive classification output directory
+  bl_file     PATH                      Specific baseline TSV (overrides bl_dir)
+  con_file    PATH                      Specific consecutive TSV (overrides con_dir)
   figs_dir    DIR                       Output figures directory
   pis         PATH                      patient_infection_sequence.tsv
+  min_rec     INT                       Min. recurrences for patient timeline plot (default: 2)
 
-Example:
-  vivaxrec plot trial mytrial pair_mode both \\
-    bl_dir  /data/recurrence-classification/mytrial/baseline-to-recurrence \\
-    con_dir /data/recurrence-classification/mytrial/consecutive-pairs \\
-    figs_dir /data/recurrence-classification/mytrial/figures \\
-    pis /data/patient_level_tables/patient_infection_sequence.tsv"""
+Reporting-only arm grouping (matches whatever was used at classify time, or can
+differ — this script recomputes it independently, so it works even against
+classify output that was NOT itself run with arm_group):
+  arm_group   "ARM:GROUP" ["ARM:GROUP" ...]
+              e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"
+              e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"
+
+First-recurrence-only plotting WITHOUT ever running classify with pair_mode
+baseline. Point con_file at a *_first_rec_only.tsv (produced by classify with
+pair_mode consecutive first_rec_only on) and set this flag on — its columns
+are aliased into the schema the reinfection-rank/connected-dots/relapse-averted
+plots expect. Run the script a SECOND time (this flag off, con_dir/con_file
+pointed at the full per_infection_classifications.tsv) for the all-recurrences
+plots, including the individual-outcomes stacked bar (which needs full data):
+  first_rec_as_baseline   on|off   (default: off)
+
+Headline outputs (generated automatically):
+  individual_outcomes_stacked_<TRIAL>.png   Requires all-recurrences con data
+  emoi_spaghetti_by_episode_<TRIAL>.png     eMOI by episode index, not calendar day
+
+Example — all recurrences:
+  vivaxrec plot trial opra pair_mode consecutive \\
+    con_dir  /data/recurrence-classification/opra/consecutive-pairs \\
+    figs_dir /data/recurrence-classification/opra/figures-all-rec \\
+    pis      /data/patient_level_tables/patient_infection_sequence.tsv \\
+    arm_group "ALPQ:PQ" "CQPQ:PQ"
+
+Example — first recurrence only:
+  vivaxrec plot trial opra pair_mode consecutive \\
+    con_file /data/recurrence-classification/opra/consecutive-pairs/per_infection_classifications_first_rec_only.tsv \\
+    figs_dir /data/recurrence-classification/opra/figures-first-rec \\
+    pis      /data/patient_level_tables/patient_infection_sequence.tsv \\
+    arm_group "ALPQ:PQ" "CQPQ:PQ" \\
+    first_rec_as_baseline on"""
     ),
     "run-all": (
         cmd_run_all,
@@ -390,8 +397,6 @@ def main():
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
 
-    # parse_known_args lets flags meant for the underlying script (--rel, --coi etc.)
-    # pass through without argparse rejecting them as unrecognised
     args, extra = parser.parse_known_args()
 
     if args.command is None:
