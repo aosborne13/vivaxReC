@@ -1041,6 +1041,7 @@ plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = 
   recurred_ids <- pis %>% filter(day > 0) %>% pull(id) %>% unique()
 
   patient_status <- df %>%
+    mutate(id = as.character(id)) %>%
     filter(id %in% d0_pop$id) %>%
     group_by(id) %>%
     summarise(
