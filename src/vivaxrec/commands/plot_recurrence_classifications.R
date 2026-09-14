@@ -47,14 +47,9 @@
 #               baseline schema (recurrence_no, dr_day, dr_sample_id) and the
 #               result is stored in the same internal slot the script has
 #               always used for "one D0-anchored observation per patient"
-#               plots (reinfection rank, relapse-averted, connected dots).
-#               This lets those plots work correctly WITHOUT ever running
-#               classify_recurrences.R with pair_mode baseline. With this flag
-#               on, con is NOT also populated — run the script a second time
-#               (first_rec_as_baseline off, con_file/con_dir pointed at the
-#               full per_infection_classifications.tsv) for the
-#               all-recurrences plots (including the individual outcomes
-#               stacked bar, which specifically needs con).
+#               plots. This lets those plots work correctly WITHOUT ever
+#               running classify_recurrences.R with pair_mode baseline. With
+#               this flag on, con is NOT also populated.
 #
 # ── Auto-detected outputs ─────────────────────────────────────────────────────
 #   reinfection_rank_first_rec_<TRIAL>.png
@@ -62,11 +57,15 @@
 #     true pair_mode=baseline, or first_rec_as_baseline=on).
 #
 # ── Headline outputs ──────────────────────────────────────────────────────────
-#   individual_outcomes_stacked_<TRIAL>.png
+#   individual_outcomes_stacked_<TRIAL>_<MODE>.png
 #     One bar per (grouped) treatment arm; every Day 0-genotyped individual is
 #     placed into Relapse / Reinfection / Indeterminate / Recurred-unclassifiable
-#     / Did not recur. Requires con (all-recurrences data) — run with
-#     first_rec_as_baseline off.
+#     / Did not recur. Generated for WHICHEVER of bl/con is loaded — works for
+#     first-rec-only runs (first_rec_as_baseline=on, uses bl, <MODE>=first_rec)
+#     and all-recurrences runs (uses con, <MODE>=all_rec) alike. "Did not
+#     recur" and "recurred, unclassifiable" are always derived from the full
+#     patient_infection_sequence.tsv regardless of mode, since those two
+#     categories don't depend on classification data at all.
 #   emoi_spaghetti_by_episode_<TRIAL>.png
 #     eMOI trajectory per individual, x-axis = infection episode index (0=D0,
 #     1=first recurrence, ...) rather than calendar day. Bold line = arm
@@ -147,7 +146,7 @@ parse_cli <- function(args) {
       out$arm_group <- vals; i <- j; next
     }
     if (i == 1L && !a %in% known_flags)  {
-      out$trial <- a; i <- i+1; next   # positional first arg = trial name
+      out$trial <- a; i <- i+1; next
     }
     i <- i+1L
   }
@@ -165,12 +164,6 @@ first_rec_as_baseline <- cli$first_rec_as_baseline %||% "off"
 stopifnot(first_rec_as_baseline %in% c("on","off"))
 
 # ── Arm grouping (reporting only) ───────────────────────────────────────────────
-# Recomputed from scratch rather than trusting any arm_group column that may
-# already exist in the classification TSVs (written by classify_recurrences.R
-# only when IT was run with an arm_group flag), so this script behaves
-# identically regardless of how classify was run, and so it can ALSO be
-# applied to patient_infection_sequence.tsv, which never has an arm_group
-# column at all.
 arm_group_flag <- cli$arm_group %||% character(0)
 arm_group_map  <- character(0)
 if (length(arm_group_flag) > 0) {
@@ -307,14 +300,6 @@ load_mode <- function(fp, mode_label) {
   prep_classifications(df)
 }
 
-# ── Alias a consecutive-schema first-rec file into the baseline schema ───────
-# Consecutive mode writes: from_sample_id, to_sample_id, from_day, to_day,
-# from_time_point, to_time_point, step_no.
-# Baseline mode writes:    d0_sample_id, dr_sample_id, dr_day, dr_time_point,
-#                           recurrence_no.
-# For a first-rec-only consecutive file, step_no==1 rows ARE exactly D0->R1
-# pairs (the first link of any valid chain is always the true D0->R1 pair),
-# so this rename is a lossless schema translation.
 alias_consecutive_as_baseline <- function(df) {
   if (is.null(df)) return(NULL)
   need <- c("from_sample_id","to_sample_id","from_day","to_day","step_no")
@@ -935,9 +920,8 @@ plot_emoi_over_time <- function(fp_pis, trial_up) {
 # =============================================================================
 # eMOI trajectory by infection episode — "spaghetti" plot
 # X-axis = infection episode index (0 = D0, 1 = first recurrence, ...), derived
-# purely from chronological rank within each patient (day order) — NOT parsed
-# from time_point labels, so robust to any labelling scheme. Bold line = arm
-# median at each episode, drawn only where N >= min_n_trend individuals
+# purely from chronological rank within each patient (day order). Bold line =
+# arm median at each episode, drawn only where N >= min_n_trend individuals
 # contribute. Panel N = individuals who actually recurred (>=1 episode beyond
 # D0), not all Day 0-genotyped individuals.
 # =============================================================================
@@ -1021,13 +1005,21 @@ plot_emoi_spaghetti <- function(fp_pis, trial_up, min_n_trend = 5L, max_episode 
 #                                       regardless of chain validity
 #   Did not recur                    — no genotyped sample beyond D0 at all
 #
-# Uses con (ALL-recurrences consecutive data) — "did this patient EVER have a
-# relapse over their whole follow-up" is a whole-history question. Run only
-# from the all-recurrences classify output (first_rec_as_baseline off).
+# "Did not recur" and "Recurred, unclassifiable" are derived purely from
+# patient_infection_sequence.tsv (day > 0 presence/absence) and do NOT depend
+# on which classification data is supplied — they are correct whether df is
+# first-rec-only (bl, aliased) or all-recurrences (con) data.
+#
+# df: EITHER bl (first-rec-only, aliased from consecutive) OR con
+# (all-recurrences). Works correctly with either — for first-rec-only data,
+# each patient contributes at most one row, so the any(pv3rs_L>=0.75) checks
+# below simply evaluate that single pair; for all-recurrences data they
+# evaluate across the patient's whole history. mode_label distinguishes the
+# two in the output filename/title ("first_rec" vs "all_rec").
 # =============================================================================
-plot_individual_outcomes_stacked <- function(con, fp_pis, trial_up) {
-  if (is.null(con) || !has_cols(con, c("id","treatment_arm","pv3rs_L"))) {
-    message(">> individual_outcomes_stacked: no consecutive (all-recurrences) data — skipping")
+plot_individual_outcomes_stacked <- function(df, fp_pis, trial_up, mode_label = "all_rec") {
+  if (is.null(df) || !has_cols(df, c("id","treatment_arm","pv3rs_L"))) {
+    message(">> individual_outcomes_stacked (", mode_label, "): no classification data — skipping")
     return(invisible(NULL))
   }
   if (!file.exists(fp_pis)) {
@@ -1048,7 +1040,7 @@ plot_individual_outcomes_stacked <- function(con, fp_pis, trial_up) {
   d0_pop <- pis %>% filter(day == 0) %>% distinct(id, treatment_arm)
   recurred_ids <- pis %>% filter(day > 0) %>% pull(id) %>% unique()
 
-  patient_status <- con %>%
+  patient_status <- df %>%
     filter(id %in% d0_pop$id) %>%
     group_by(id) %>%
     summarise(
@@ -1091,6 +1083,9 @@ plot_individual_outcomes_stacked <- function(con, fp_pis, trial_up) {
     mutate(lbl = sprintf("%s\n(N=%d)", treatment_arm, n_arm))
   arm_lbl_vec <- setNames(arm_n_lbl$lbl, arm_n_lbl$treatment_arm)
 
+  mode_title <- ifelse(mode_label == "first_rec", "first recurrence only",
+                       ifelse(mode_label == "baseline", "D0\u2192DR", "all recurrences"))
+
   p <- ggplot(dat, aes(x = treatment_arm, y = pct, fill = category)) +
     geom_col(width = 0.7, colour = "white", linewidth = 0.4) +
     geom_text(aes(label = ifelse(pct >= 3, sprintf("%.0f%%\n(n=%d)", pct, n), "")),
@@ -1101,11 +1096,11 @@ plot_individual_outcomes_stacked <- function(con, fp_pis, trial_up) {
     scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20),
                        expand = expansion(mult = c(0, 0.02))) +
     labs(x = NULL, y = "% of Day 0-genotyped individuals",
-         title = sprintf("%s — individual-level recurrence outcome", trial_up)) +
+         title = sprintf("%s — individual-level recurrence outcome (%s)", trial_up, mode_title)) +
     theme_pub +
     theme(legend.position = "right", panel.grid.major.x = element_blank())
 
-  fname <- sprintf("individual_outcomes_stacked_%s.png", trial_up)
+  fname <- sprintf("individual_outcomes_stacked_%s_%s.png", trial_up, mode_label)
   ggsave(file.path(figs_dir, fname), p,
          width = max(6, length(arm_levels) * 1.8 + 2), height = 6,
          dpi = 300, bg = "white")
@@ -1390,7 +1385,10 @@ plot_relapse_prob_vs_day(con_dt_day, "to_day",  "consecutive", "Days since D0")
 # ── 5. eMOI plots + individual outcomes ───────────────────────────────────────
 plot_emoi_over_time(fp_pis, TRIAL_UP)
 plot_emoi_spaghetti(fp_pis, TRIAL_UP)
-plot_individual_outcomes_stacked(con, fp_pis, TRIAL_UP)
+
+outcome_df   <- if (!is.null(con)) con else bl
+outcome_mode <- if (!is.null(con)) "all_rec" else if (bl_is_first_rec) "first_rec" else "baseline"
+plot_individual_outcomes_stacked(outcome_df, fp_pis, TRIAL_UP, outcome_mode)
 
 # ── 6. Multi-panel summaries ──────────────────────────────────────────────────
 if (requireNamespace("patchwork", quietly = TRUE)) {
