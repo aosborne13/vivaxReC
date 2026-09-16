@@ -1567,11 +1567,12 @@ outcome_df   <- if (!is.null(con)) con else bl
 outcome_mode <- if (!is.null(con)) "all_rec" else if (bl_is_first_rec) "first_rec" else "baseline"
 plot_individual_outcomes_stacked(outcome_df, fp_pis, TRIAL_UP, outcome_mode, fp_master)
 
-# ── 5b. Relatedness/P(relapse) trend grid — UNPOOLED, from bl_raw/con_raw ────
-if (!is.null(con_raw))
-  plot_relatedness_relapse_trend_grid(con_raw, TRIAL_UP, "all_rec")
-if (!is.null(bl_raw) && bl_is_first_rec)
-  plot_relatedness_relapse_trend_grid(bl_raw, TRIAL_UP, "first_rec")
+# ── 5b. Relatedness/P(relapse) trend grid — respects arm_group like every
+# other figure in this script ─────────────────────────────────────────────
+if (!is.null(con))
+  plot_relatedness_relapse_trend_grid(con, TRIAL_UP, "all_rec")
+if (!is.null(bl) && bl_is_first_rec)
+  plot_relatedness_relapse_trend_grid(bl, TRIAL_UP, "first_rec")
 
 # ── 6. Multi-panel summaries ──────────────────────────────────────────────────
 if (requireNamespace("patchwork", quietly = TRUE)) {
