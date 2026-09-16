@@ -42,6 +42,11 @@
 #               only which facet/legend label a row's treatment_arm renders under.
 #               e.g. OPRA:   arm_group "ALPQ:PQ" "CQPQ:PQ"      (AL, CQ stay separate)
 #               e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"   (Control stays separate)
+#               NOTE: unpooled snapshots (bl_raw/con_raw) are taken BEFORE this
+#               grouping is applied, specifically so that
+#               plot_relatedness_relapse_trend_grid() can always render every
+#               original arm separately, regardless of what arm_group is passed
+#               for the rest of this run's figures.
 #
 #   first_rec_as_baseline   on | off (default: off)
 #               When on, the data loaded via con_dir/con_file is expected to
@@ -84,6 +89,22 @@
 #     median, shown only where N>=5 contribute. Panel N = individuals who
 #     actually recurred (>=1 episode beyond D0). Panels forced to a single
 #     row (nrow=1) with square-ish dimensions.
+#
+#   relatedness_relapse_trend_grid_<TRIAL>_<MODE>.png
+#     Three stacked rows, faceted by UNPOOLED treatment arm (deliberately
+#     bypasses arm_group — see bl_raw/con_raw above):
+#       A) Pairwise relatedness (DCiFER r) vs days since D0, coloured by r,
+#          with loess trend + CI ribbon.
+#       B) P(relapse) vs days since D0, coloured by DCiFER r, shaped by eMOI
+#          (monoclonal/polyclonal), with loess trend + CI ribbon.
+#       C) P(relapse) vs days since D0, coloured by discrete classification
+#          (relapse/reinfection/indeterminate), with loess trend + CI ribbon.
+#     Generated once per trial for each of first_rec and all_rec, from
+#     bl_raw/con_raw respectively — NOT reconstructed from a screenshot with
+#     full confidence; verify against the original script if you still have
+#     it anywhere (old commit, backup, different branch), since span,
+#     exact colour-scale title, and a couple of layering choices were
+#     inferred rather than confirmed.
 #
 # NOTE: relapse_connected_dots_first_rec_<TRIAL>.png and
 # relapse_averted_pv3rs_<TRIAL>.png are DISABLED — the functions remain
@@ -355,8 +376,8 @@ alias_consecutive_as_baseline <- function(df) {
 }
 
 if (first_rec_as_baseline == "on") {
-  con_raw <- load_mode(fp_con, "consecutive (first-rec, to be aliased)")
-  bl  <- alias_consecutive_as_baseline(con_raw)
+  con_raw_load <- load_mode(fp_con, "consecutive (first-rec, to be aliased)")
+  bl  <- alias_consecutive_as_baseline(con_raw_load)
   con <- NULL
   if (!is.null(bl))
     message(sprintf(">> aliased %d first-rec row(s) from consecutive schema into baseline slot", nrow(bl)))
@@ -364,6 +385,13 @@ if (first_rec_as_baseline == "on") {
   bl  <- if (pair_mode %in% c("baseline",    "both")) load_mode(fp_bl,  "baseline")    else NULL
   con <- if (pair_mode %in% c("consecutive", "both")) load_mode(fp_con, "consecutive") else NULL
 }
+
+# ── Unpooled snapshots — MUST be taken before apply_arm_group() mutates
+# treatment_arm in place. Used exclusively by plot_relatedness_relapse_trend_grid(),
+# which is required to show every original arm separately regardless of
+# whatever arm_group pooling is requested for the rest of this run's figures.
+bl_raw  <- bl
+con_raw <- con
 
 bl  <- apply_arm_group(bl)
 con <- apply_arm_group(con)
@@ -1227,6 +1255,119 @@ plot_dcifer_by_arm_overlap <- function(df, mode_label, fname) {
 }
 
 # =============================================================================
+# Trend-by-arm grid: relatedness + P(relapse) over time, per arm, UNPOOLED
+#
+# Three stacked rows per trial:
+#   A) Pairwise relatedness (DCiFER r) vs days since D0
+#   B) P(relapse) vs days since D0, coloured by DCiFER r, shaped by eMOI
+#   C) P(relapse) vs days since D0, coloured by discrete classification
+#
+# Faceted by UNPOOLED treatment_arm on purpose — call this with bl_raw/con_raw,
+# never bl/con, so arm_group pooling never touches this figure regardless of
+# what's passed on the CLI for everything else.
+#
+# Reconstructed from a screenshot, not the original source — flagged
+# uncertainties: exact loess span, Row A's colour-scale legend title, and
+# Row C's point layering. Verify against the real script if you locate it.
+# =============================================================================
+plot_relatedness_relapse_trend_grid <- function(df, trial_up, mode_label) {
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message(">> patchwork required for trend grid — skipping")
+    return(invisible(NULL))
+  }
+  if (is.null(df) || !has_cols(df, c("treatment_arm","dcifer_r","pv3rs_L","emoi_s1","emoi_s2"))) {
+    message(">> trend grid: missing required columns — skipping")
+    return(invisible(NULL))
+  }
+
+  day_col <- if ("to_day" %in% names(df)) "to_day" else "dr_day"
+  if (!day_col %in% names(df)) {
+    message(">> trend grid: no day column found — skipping")
+    return(invisible(NULL))
+  }
+  arm_levels <- sort(unique(na.omit(as.character(df$treatment_arm))))
+
+  d <- df %>%
+    filter(is.finite(.data[[day_col]]), is.finite(dcifer_r)) %>%
+    mutate(
+      .day = .data[[day_col]],
+      moi_shape = dplyr::case_when(
+        is.na(emoi_s1) | is.na(emoi_s2) ~ "unknown",
+        emoi_s1 <= 1.1 & emoi_s2 <= 1.1 ~ "monoclonal",
+        TRUE ~ "polyclonal"
+      ),
+      class_disc = dplyr::case_when(
+        is.na(pv3rs_L) ~ "indeterminate",
+        pv3rs_L >= 0.75 ~ "relapse",
+        pv3rs_L <= 0.25 ~ "reinfection",
+        TRUE ~ "indeterminate"
+      ),
+      treatment_arm = factor(treatment_arm, levels = arm_levels)
+    )
+  if (!nrow(d)) { message(">> trend grid: no rows after filtering — skipping"); return(invisible(NULL)) }
+
+  panel_n <- d %>%
+    group_by(treatment_arm) %>%
+    summarise(n_pairs = dplyr::n(), n_indiv = dplyr::n_distinct(id), .groups = "drop") %>%
+    mutate(lbl = sprintf("%s\n%d pairs, %d individuals", treatment_arm, n_pairs, n_indiv))
+  lbl_vec <- setNames(panel_n$lbl, panel_n$treatment_arm)
+  strip_labeller <- as_labeller(function(x) lbl_vec[x])
+
+  common_x <- scale_x_continuous(name = "Days since D0")
+
+  # ---- Row A: DCiFER r vs day ----
+  pA <- ggplot(d, aes(x = .day, y = dcifer_r, colour = dcifer_r)) +
+    geom_smooth(method = "loess", se = TRUE, colour = "grey30", fill = "grey80",
+                linewidth = 0.7, alpha = 0.25) +
+    geom_point(size = 2, alpha = 0.85) +
+    facet_wrap(~treatment_arm, nrow = 1, labeller = strip_labeller) +
+    scale_colour_gradient(low = "#D9EEF8", high = "#08306B", limits = c(0,1), name = "Dcifer r") +
+    scale_y_continuous(limits = c(0,1), name = "Pairwise Relatedness") +
+    common_x +
+    theme_pub + theme(strip.text = element_text(face = "bold", size = 9))
+
+  # ---- Row B: P(relapse) vs day, coloured by DCiFER r, shaped by eMOI ----
+  pB <- ggplot(d, aes(x = .day, y = pv3rs_L)) +
+    geom_smooth(method = "loess", se = TRUE, colour = "grey30", fill = "grey80",
+                linewidth = 0.7, alpha = 0.25) +
+    geom_point(aes(colour = dcifer_r, shape = moi_shape), size = 2, alpha = 0.85) +
+    facet_wrap(~treatment_arm, nrow = 1, labeller = strip_labeller) +
+    scale_colour_gradient(low = "#D9EEF8", high = "#08306B", limits = c(0,1), guide = "none") +
+    scale_shape_manual(values = c(monoclonal = 16, polyclonal = 17, unknown = 4), name = "eMOI") +
+    scale_y_continuous(limits = c(0,1), name = "P(relapse)") +
+    common_x +
+    theme_pub + theme(strip.text = element_blank())
+
+  # ---- Row C: P(relapse) vs day, coloured by discrete classification ----
+  class_pal <- c(relapse = "#6aa9ff", reinfection = "#2fbf71", indeterminate = "#e74c3c")
+  pC <- ggplot(d, aes(x = .day, y = pv3rs_L, colour = class_disc)) +
+    geom_smooth(method = "loess", se = TRUE, colour = "grey30", fill = "grey80",
+                linewidth = 0.7, alpha = 0.25) +
+    geom_point(data = d %>% filter(class_disc != "indeterminate"), size = 2, alpha = 0.85) +
+    geom_point(data = d %>% filter(class_disc == "indeterminate"),
+               shape = 4, size = 2.4, stroke = 1) +
+    facet_wrap(~treatment_arm, nrow = 1, labeller = strip_labeller) +
+    scale_colour_manual(values = class_pal, name = "Classification") +
+    scale_y_continuous(limits = c(0,1), name = "P(relapse)") +
+    common_x +
+    theme_pub + theme(strip.text = element_blank())
+
+  combined <- pA / pB / pC +
+    patchwork::plot_annotation(
+      tag_levels = "A",
+      title = sprintf("%s — relatedness and P(relapse) over time by arm (%s)", trial_up, mode_label),
+      theme = theme(plot.title = element_text(size = 13, face = "bold"))
+    )
+
+  fname <- sprintf("relatedness_relapse_trend_grid_%s_%s.png", trial_up, mode_label)
+  n_arms <- length(arm_levels)
+  ggsave(file.path(figs_dir, fname), combined,
+         width = n_arms * 3.2 + 1, height = 9, dpi = 300, bg = "white", limitsize = FALSE)
+  message(">> wrote: ", fname)
+  invisible(combined)
+}
+
+# =============================================================================
 # Generate all plots
 # =============================================================================
 
@@ -1425,6 +1566,12 @@ plot_emoi_spaghetti(fp_pis, TRIAL_UP)
 outcome_df   <- if (!is.null(con)) con else bl
 outcome_mode <- if (!is.null(con)) "all_rec" else if (bl_is_first_rec) "first_rec" else "baseline"
 plot_individual_outcomes_stacked(outcome_df, fp_pis, TRIAL_UP, outcome_mode, fp_master)
+
+# ── 5b. Relatedness/P(relapse) trend grid — UNPOOLED, from bl_raw/con_raw ────
+if (!is.null(con_raw))
+  plot_relatedness_relapse_trend_grid(con_raw, TRIAL_UP, "all_rec")
+if (!is.null(bl_raw) && bl_is_first_rec)
+  plot_relatedness_relapse_trend_grid(bl_raw, TRIAL_UP, "first_rec")
 
 # ── 6. Multi-panel summaries ──────────────────────────────────────────────────
 if (requireNamespace("patchwork", quietly = TRUE)) {
