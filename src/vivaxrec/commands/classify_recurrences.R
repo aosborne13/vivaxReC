@@ -47,14 +47,14 @@
 #   max_recrud_days numeric  (post-hoc C->L reassignment threshold, default 45)
 #
 # ── Three-window prior (primary prior system) ─────────────────────────────────
-#   Biologically grounded on P. vivax biology and published radical cure trial data.
+#   Biologically based on P. vivax biology.
 #   Defaults are derived from published P. vivax radical cure trial data and should
 #   be reviewed and adjusted to reflect the epidemiology of the setting being analysed.
 #
 #     CQ efficacy example (Getachew et al. 2015): 0.7% early, 8% late treatment failure
 #     PQ efficacy example (Taylor et al. 2019 Lancet): ~5.3x reduction in relapse
 #     AL efficacy example (Byakika-Kibwika et al. 2010, PMC2817784): lumefantrine
-#     terminal half-life ~3-6 days (range 4-10 days in patients), vs CQ's 20-60 days —
+#     terminal half-life ~3-6 days (range 4-10 days in patients), vs CQ's 20-60 days
 #     window_days_al set to 14 days by default for a conservative margin above the
 #     observed range. Review and adjust for your own setting.
 #
@@ -87,9 +87,9 @@
 #   named arms, to account for drugs with materially different half-lives (e.g.
 #   AL's few-day terminal half-life vs CQ's 20-60 day half-life). Any arm not
 #   listed under al_arms or cq_arms uses the global window_days/pC/pL/
-#   max_recrud_days values unchanged. This changes Pv3Rs posteriors — it is not
-#   a cosmetic/reporting-only setting. Composes independently with pq_arms (see
-#   above) — al_arms/cq_arms controls window SHAPE, pq_arms controls the relapse-
+#   max_recrud_days values unchanged. This changes Pv3Rs posteriors!
+#   Composes independently with pq_arms (see above)
+#   al_arms/cq_arms controls window SHAPE, pq_arms controls the relapse-
 #   prior DISCOUNT; a patient can be affected by both at once (e.g. ALPQ, CQPQ).
 #
 #   al_arms              names of arms to receive the AL-specific overrides below
@@ -114,13 +114,13 @@
 #                   Arms not listed keep their own name as their group label.
 #
 # ── Substituted-baseline handling (reporting-level exclusion) ──────────────────
-#   Some patients are missing a true Day 0 sample but have a genotyped first
-#   recurrence (R1) and a directly consecutive second recurrence (R2); upstream
+#   OPTIONAL SETTING - DO NOT USE BY DEFAULT - Some patients are missing a true Day 0 sample but have a genotyped first
+#   recurrence (R1) and a consecutive second recurrence (R2); upstream
 #   processing substitutes R1 as a stand-in "baseline" so the R1->R2 interval can
-#   still be analysed. This is treatment-equivalent in trials where every
-#   recurrence receives the same regimen (e.g. IMPROV, where PQ is given at every
+#   still be analysed DEPENING ON THE SITUATION. This is treatment-equivalent in trials where every
+#   recurrence receives the same regimen (e.g. where PQ is given at every
 #   recurrence), but NOT treatment-equivalent where only the true enrolment
-#   treatment is directly observed and later doses are unsupervised (e.g. OPRA) —
+#   treatment is directly observed and later doses are unsupervised -
 #   in that setting we cannot know whether the substituted "baseline" visit itself
 #   received supervised treatment.
 #
@@ -307,7 +307,7 @@ if (use_armtime) {
 }
 
 # ── Three-window prior parameters ─────────────────────────────────────────────
-# Defaults are grounded in P. vivax biology and published Ethiopian trial data.
+# Defaults using P. vivax biology and published Ethiopian trial data.
 # Users should review and adjust these values to reflect their own study setting.
 #
 # Window 1 (≤w1 days):  recrudescence possible, short-latency relapse possible
