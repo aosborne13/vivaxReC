@@ -1,7 +1,9 @@
 # vivaxReC
 
 ## What is vivaxReC ?
-**vivaxReC** (**v**ivax **R**e**C**urrence) is a wrapper for processing multiallelic, MicroHaplotype, data (genotyping data following protocols and design workflows created by **VivaxGEN**: [Pv-rhAmpSeq Laboratory Protocol](https://www.protocols.io/view/p-vivax-microhaplotype-deep-sequencing-assays-x54v92boml3e/v2) and [Manuscript](https://www.nature.com/articles/s41467-025-62357-x)) for classifying recurrent *Plasmodium vivax* infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs*, with *Aster* being added at a later date for *P. falciparum* treatment failure estimates), allele-sharing, relatedness estimates (including *Dcifer* and background relatedness).
+**vivaxReC** (**v**ivax **R**e**C**urrence) is a wrapper for processing multiallelic data for classifying recurrent *Plasmodium vivax* infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. ** *Pv3Rs* **, with *Aster* being added at a later date for *P. falciparum* treatment failure estimates), allele-sharing, relatedness estimates (including *Dcifer* and background relatedness).
+
+Modeled using genotyping data following protocols and design workflows created by **VivaxGEN**: [Pv-rhAmpSeq Laboratory Protocol](https://www.protocols.io/view/p-vivax-microhaplotype-deep-sequencing-assays-x54v92boml3e/v2) and [Manuscript](https://www.nature.com/articles/s41467-025-62357-x).
 
 **vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reinvent existing methods. All primary methodological credit remains with the original tool authors.
 
