@@ -240,7 +240,7 @@ Repeat for each trial in your dataset.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `max_recrud_days` | `45` | Interval threshold for post-hoc C→L/I reassignment |
+| `max_recrud_days` | `45` | Interval threshold for post-hoc C→L/I reassignment (default in the absense of specified blood-stage treatment; still assumed treatment was administered) |
 | `af_model` | `mix` | Allele frequency model: `d0`, `pair`, or `mix` |
 | `window_days` | `35 120` | Time window boundaries (days). Used by **pL for every treatment arm, unconditionally**, and by pC as its default schedule for any arm not covered by `al_arms`/`cq_arms` below |
 | `pC` | `0.08`, `0.01`, `0.005` | Per-window recrudescence prior (default schedule; see `al_arms`/`cq_arms` for drug-specific overrides) |
