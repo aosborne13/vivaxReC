@@ -368,6 +368,8 @@ The pipeline uses a biologically-informed three-window time prior for both recru
 
 Set via `al_arms`/`cq_arms` plus `window_days_al`/`window_days_cq` and `pC_al`/`pC_cq` (see Option flags table above). These defaults are derived from published *P. vivax* radical cure trial data and should be reviewed and adjusted for each new study setting — independently for pC and pL where biologically appropriate, bearing in mind that pL is intentionally never varied by drug.
 
+> **Note on untreated or placebo arms:** `pC` (recrudescence) and `max_recrud_days` both assume every treatment arm received a blood-stage schizonticide which is not coherent in the absence of treatment. This is not an issue for clinical trials or regimented follow-up studies. However, if you are analysing a dataset that includes any untreated individuals, recrudescence should not be assumed - **Manually** set `pC` values at or near zero (e.g. `pC_<suffix> 0.001 0.001 0.001` via a custom `al_arms`/`cq_arms`-style grouping for that arm) rather than relying on the default `pC` schedule, which assumes treatment occurred.
+
 Window boundaries and prior values are all configurable via CLI flags. If primaquine (PQ) treatment arms are present, the relapse prior in windows 2 and 3 of pL's (global) schedule is discounted by `pq_discount` (default 0.19, reflecting ~5-fold reduction in relapse from published trial data). Adjust this multiplier to match the efficacy observed in your study.
 
 The `lambda_foi_w = 0.002/day` default reinfection rate is conservative; relapse proportions derived under this prior should be treated as lower bounds in high-transmission settings.
