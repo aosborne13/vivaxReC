@@ -343,7 +343,7 @@ vivaxrec summarise \
 
 The pipeline uses a biologically-informed three-window time prior for both recrudescence (pC) and relapse (pL). **pC and pL follow independent window-day schedules — this is deliberate, not an oversight.** Recrudescence plausibility tracks the terminal half-life of the blood-stage partner drug, so pC's window boundaries are legitimately drug-specific. Relapse timing is governed by hypnozoite reactivation biology, which has no mechanistic link to the blood-stage partner drug — **pL therefore always uses the single schedule below, identically for every treatment arm**, whether or not it also receives the PQ discount. There is no drug-specific pL override anywhere in this pipeline.
 
-**pL's schedule (always, every arm):**
+**pL window timings:**
 
 | Window | Days | Description |
 |--------|------|-------------|
@@ -351,7 +351,7 @@ The pipeline uses a biologically-informed three-window time prior for both recru
 | 2 | 35–120 | Primary relapse window |
 | 3 | > 120 | Reinfection accumulates |
 
-**pC's default schedule** (used for any arm not listed under `al_arms`/`cq_arms`):
+**pC default timing schedule** (used for any arm not listed under `al_arms`/`cq_arms`):
 
 | Window | Days | Description |
 |--------|------|-------------|
@@ -359,7 +359,7 @@ The pipeline uses a biologically-informed three-window time prior for both recru
 | 2 | 36–120 | Recrudescence very unlikely |
 | 3 | > 120 | Recrudescence implausible |
 
-**pC's drug-specific schedules**, where the trial includes arms with materially different blood-stage drug half-lives — e.g. for AL (terminal half-life ~3–6 days) vs. CQ (20–60 days):
+**pC drug-specific timing schedules** (blood-stage treatment eithe AL or CQ; drug half-lives e.g. for AL (terminal half-life ~3–6 days) vs. CQ (20–60 days)):
 
 | Drug | Window 1 | Window 2 | Window 3 |
 |------|----------|----------|----------|
