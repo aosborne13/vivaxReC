@@ -7,7 +7,7 @@
 # for all pairs and retained as supplementary descriptive output.
 #
 # ── Input files ───────────────────────────────────────────────────────────────
-# All live under your analysis directory:
+# All under analysis directory:
 #
 #   input-files/patient_level_tables/
 #     patient_infection_sequence.tsv          (eMOI source + patient linkage)
@@ -46,27 +46,37 @@
 #   maxrec          integer  (Pv3Rs max recurrences per patient, default 6)
 #   max_recrud_days numeric  (post-hoc C->L reassignment threshold, default 45)
 #
-# ── Three-window prior (primary prior system) ─────────────────────────────────
-#   Biologically based on P. vivax biology.
-#   Defaults are derived from published P. vivax radical cure trial data and should
+# ── Independent pC / pL window schedules (primary prior system) ───────────────
+#   Based on P. vivax biology, per Supplementary Table 1.
+#   Defaults derived from published P. vivax radical cure trial data and should
 #   be reviewed and adjusted to reflect the epidemiology of the setting being analysed.
+#
+#   *** pC and pL use INDEPENDENT window-day schedules ***
+#   Recrudescence plausibility (pC) uses the blood-stage partner drug's
+#   terminal half-life, so pC's window boundaries are drug-specific
+#   (see al_arms/cq_arms below). 
+#   Relapse timing (pL) is governed by hypnozoite
+#   reactivation biology - no link to the blood-stage
+#   partner drug - pL ALWAYS follows a single schedule
+#   (window_days / pL below), identically for every arm, PQ-discounted or not.
 #
 #     CQ efficacy example (Getachew et al. 2015): 0.7% early, 8% late treatment failure
 #     PQ efficacy example (Taylor et al. 2019 Lancet): ~5.3x reduction in relapse
 #     AL efficacy example (Byakika-Kibwika et al. 2010, PMC2817784): lumefantrine
 #     terminal half-life ~3-6 days (range 4-10 days in patients), vs CQ's 20-60 days
-#     window_days_al set to 14 days by default for a conservative margin above the
-#     observed range. Review and adjust for your own setting.
 #
-#   window_days     w1 w2  (default: 35 120)
+#   window_days     w1 w2  (default: 35 120) - pC AND pL default schedule;
+#                   for pC specifically, this is OVERRIDDEN per-drug via
+#                   window_days_al / window_days_cq below.
 #     Window 1 ≤w1:   recrudescence possible, early relapse possible
 #     Window 2 w1-w2: recrudescence very unlikely, primary relapse window
-#     Window 3 >w2:   recrudescence implausible, reinfection accumulates
+#     Window 3 >w2:   recrudescence implausible
 #
 #   pC              pC_w1 pC_w2 pC_w3  (default: 0.08 0.01 0.005)
 #   pL              pL_w1 pL_w2 pL_w3  (default: 0.25 0.70 0.40)
 #     Note: pL values shown are for non-PQ arms. PQ arms receive pL*pq_discount
-#     in windows 2 and 3 (window 1 undiscounted — PQ course still being taken)
+#     in windows 2 and 3 (window 1 undiscounted — PQ course still being taken).
+#     This discount is applied on top of the global pL window (see above)
 #
 #   lambda_foi_w    daily reinfection rate, uncapped  (default: 0.002/day)
 #     pI grows as 1-exp(-lambda_foi_w * t); no ceiling — reinfection possible
@@ -76,30 +86,29 @@
 #                   e.g.: pq_arms "7-day" "14-day"
 #                   If omitted, no arms receive the PQ discount.
 #                   Combines with al_arms/cq_arms independently — e.g. a patient
-#                   in ALPQ gets BOTH the AL-specific window shape (from al_arms)
+#                   in ALPQ gets BOTH the AL-specific pC window (from al_arms)
 #                   AND the PQ relapse-prior discount (from pq_arms) simultaneously.
 #
 #   armtime         legacy 5-value log-normal prior (back-compat only)
 #                   lambda_foi bump_center bump_sdlog pC_base pI_base
 #
-# ── Drug-specific window/prior overrides ───────────────────────────────────────
-#   These OVERRIDE window_days / pC / pL / max_recrud_days for patients in the
-#   named arms, to account for drugs with materially different half-lives (e.g.
-#   AL's few-day terminal half-life vs CQ's 20-60 day half-life). Any arm not
-#   listed under al_arms or cq_arms uses the global window_days/pC/pL/
-#   max_recrud_days values unchanged. This changes Pv3Rs posteriors!
-#   Composes independently with pq_arms (see above)
-#   al_arms/cq_arms controls window SHAPE, pq_arms controls the relapse-
-#   prior DISCOUNT; a patient can be affected by both at once (e.g. ALPQ, CQPQ).
+# ── Drug-specific pC window/prior overrides (pC ONLY — see note above) ────────
+#   These OVERRIDE window_days / pC / max_recrud_days, for the pC (recrudescence)
+#   calculation ONLY, for patients in the named arms, to account for drugs with
+#   materially different half-lives (e.g. AL's few-day terminal half-life vs
+#   CQ's 20-60 day half-life). Any arm not listed under al_arms or cq_arms uses
+#   the global window_days/pC/max_recrud_days values unchanged for pC.
+#   pL is NEVER affected by al_arms/cq_arms — every arm's pL always follows the
+#   single global window_days/pL schedule. This changes Pv3Rs posteriors!
+#   Composes independently with pq_arms (see above).
 #
-#   al_arms              names of arms to receive the AL-specific overrides below
+#   al_arms              names of arms to receive the AL-specific pC overrides below
 #                        e.g.: al_arms "AL" "ALPQ"
-#   cq_arms               names of arms to receive the CQ-specific overrides below
+#   cq_arms               names of arms to receive the CQ-specific pC overrides below
 #                        e.g.: cq_arms "CQ" "CQPQ"
-#   window_days_al       w1 w2 override for al_arms (default: falls back to window_days)
-#   window_days_cq       w1 w2 override for cq_arms (default: falls back to window_days)
+#   window_days_al    w1 w2 override for al_arms' pC windows (default: falls back to global window_days)
+#   window_days_cq    w1 w2 override for cq_arms' pC windows (default: falls back to global window_days)
 #   pC_al / pC_cq        pC_w1 pC_w2 pC_w3 override for al_arms / cq_arms
-#   pL_al / pL_cq        pL_w1 pL_w2 pL_w3 override for al_arms / cq_arms
 #   max_recrud_days_al   recrudescence reassignment threshold override for al_arms
 #   max_recrud_days_cq   recrudescence reassignment threshold override for cq_arms
 #
@@ -162,9 +171,10 @@
 #     master_dir $BASE/output-analysis/recurrence-classification \
 #     out_dir    $BASE/output-analysis/recurrence-classification/$TRIAL/consecutive-pairs
 #
-#   # OPRA, consecutive: group PQ arms (AL/CQ stay separate), AL/CQ half-life
-#   # windows, and exclude substituted-baseline first intervals (OPRA-specific,
-#   # since only the true D0 treatment is directly observed there)
+#   # OPRA, consecutive: group PQ arms (AL/CQ stay separate), AL/CQ pC half-life
+#   # windows ONLY (pL stays identical across all arms — see note above), and
+#   # exclude substituted-baseline first intervals (OPRA-specific, since only
+#   # the true D0 treatment is directly observed there)
 #   Rscript $SCRIPTS/classify_recurrences.R \
 #     trial opra pair_mode consecutive \
 #     input_dir  $BASE/input-files/patient_level_tables \
@@ -173,8 +183,8 @@
 #     out_dir    $BASE/output-analysis/recurrence-classification/opra/consecutive-pairs \
 #     pq_arms "ALPQ" "CQPQ" \
 #     arm_group "ALPQ:PQ" "CQPQ:PQ" \
-#     al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \
-#     cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \
+#     al_arms "AL" "ALPQ" window_days_al 14 60 pC_al 0.08 0.01 0.005 max_recrud_days_al 14 \
+#     cq_arms "CQ" "CQPQ" window_days_cq 35 120 pC_cq 0.08 0.01 0.005 max_recrud_days_cq 45 \
 #     exclude_substituted_first on
 #
 #   # IMPROV, consecutive: group PQ arms (Control stays separate); substitution
@@ -218,14 +228,14 @@ parse_cli <- function(args) {
     max_recrud_days = 1,  # post-hoc C->L/I reassignment threshold in days (default: 45)
     maxrec         = 1,   # maximum number of recurrences per patient passed to Pv3Rs
     armtime        = 5,   # legacy: lambda_foi, bump_center, bump_sdlog, pC_base, pI_base
-    # ── Three-window prior (replaces armtime log-normal bump) ──────────────────
-    # Biologically informed time windows for recurrence state priors.
+    # ── Global window/prior schedule — used by pL ALWAYS, and by pC unless
+    # overridden per-drug via window_days_al / window_days_cq below ─────
     # Window 1: 0–w1 days     — recrudescence possible, short-latency relapse possible
     # Window 2: w1+1–w2 days  — recrudescence very unlikely, primary relapse window
     # Window 3: >w2 days      — recrudescence implausible, reinfection accumulates
     window_days    = 2,   # w1 w2  (default: 35 120)
     pC             = 3,   # pC_w1 pC_w2 pC_w3  (default: 0.08 0.01 0.005)
-    pL             = 3,   # pL_w1 pL_w2 pL_w3  (default: 0.25 0.70 0.40)
+    pL             = 3,   # pL_w1 pL_w2 pL_w3  (default: 0.25 0.70 0.40) — ALWAYS applies, every arm
     # pI_cap removed: reinfection risk is uncapped (grows freely with lambda_foi)
     lambda_foi_w   = 1,   # daily force of infection for pI growth (default: 0.002)
     pq_discount    = 1,   # multiplier on pL for PQ arms in windows 2+3 (default: 0.19)
@@ -236,15 +246,13 @@ parse_cli <- function(args) {
     site           = -1,  # site name(s) to restrict analysis to (variable length; space-separated)
     # ── Reporting-only arm grouping (does not affect Pv3Rs computation) ────────
     arm_group      = -1,  # "raw_arm:group_label" pairs, e.g. arm_group "ALPQ:PQ" "CQPQ:PQ"
-    # ── Drug-specific window/prior overrides (DOES change Pv3Rs posteriors) ────
-    al_arms             = -1,  # arm names treated with AL (short half-life) overrides
-    cq_arms             = -1,  # arm names treated with CQ (long half-life) overrides
-    window_days_al      = 2,   # w1 w2 override for al_arms (falls back to global window_days)
-    window_days_cq      = 2,   # w1 w2 override for cq_arms (falls back to global window_days)
+    # ── Drug-specific pC window/prior overrides (pC ONLY — never pL) ───────────
+    al_arms             = -1,  # arm names treated with AL (short half-life) pC overrides
+    cq_arms             = -1,  # arm names treated with CQ (long half-life) pC overrides
+    window_days_al   = 2,   # w1 w2 override for al_arms' pC windows (falls back to global window_days)
+    window_days_cq   = 2,   # w1 w2 override for cq_arms' pC windows (falls back to global window_days)
     pC_al                = 3,  # pC_w1 pC_w2 pC_w3 override for al_arms
     pC_cq                = 3,  # pC_w1 pC_w2 pC_w3 override for cq_arms
-    pL_al                = 3,  # pL_w1 pL_w2 pL_w3 override for al_arms
-    pL_cq                = 3,  # pL_w1 pL_w2 pL_w3 override for cq_arms
     max_recrud_days_al  = 1,   # recrudescence reassignment threshold override for al_arms
     max_recrud_days_cq  = 1,   # recrudescence reassignment threshold override for cq_arms
     # ── Substituted-baseline reporting exclusion ────────────────────────────────
@@ -306,22 +314,25 @@ if (use_armtime) {
   lambda_foi <- bump_center <- bump_sdlog <- pC_base <- pI_base <- NA_real_
 }
 
-# ── Three-window prior parameters ─────────────────────────────────────────────
+# ── Global window/prior parameters ────────────────────────────────────────────
 # Defaults using P. vivax biology and published Ethiopian trial data.
 # Users should review and adjust these values to reflect their own study setting.
 #
-# Window 1 (≤w1 days):  recrudescence possible, short-latency relapse possible
-# Window 2 (w1-w2 days): recrudescence very unlikely, primary relapse window
-# Window 3 (>w2 days):  recrudescence implausible, reinfection accumulates
+# w1/w2 and pL_w below are the ONE AND ONLY schedule pL ever uses, for every
+# arm, PQ or not — there is no per-drug pL override anywhere in this script.
+# w1/w2 and pC_w are pC's DEFAULT schedule, used for any arm not listed under
+# al_arms/cq_arms; arms that ARE listed use their window_days_*/pC_*
+# override instead (see resolve_drug_params() below).
 #
-# pq_discount: multiplier on pL for PQ arms in windows 2 & 3
+# pq_discount: multiplier on pL for PQ arms in windows 2 & 3 of pL's (global)
+# schedule — never applied against a drug-specific window, since pL has none.
 #   default 0.19 = 1/5.3 from published ~5-fold reduction in relapse with PQ
 use_window_prior <- !is.null(cli$window_days)
 if (use_window_prior) {
   w1           <- as.numeric(cli$window_days[1])  # default 35
   w2           <- as.numeric(cli$window_days[2])  # default 120
   pC_w         <- as.numeric(cli$pC)              # 3 values: w1 w2 w3
-  pL_w         <- as.numeric(cli$pL)              # 3 values: w1 w2 w3
+  pL_w         <- as.numeric(cli$pL)              # 3 values: w1 w2 w3 — ALWAYS applies
   lambda_foi_w <- as.numeric(cli$lambda_foi_w %||% 0.002)
   pq_discount  <- as.numeric(cli$pq_discount  %||% 0.19)
 } else {
@@ -357,28 +368,30 @@ map_arm_group <- function(raw_arm) {
   if (raw_arm %in% names(arm_group_map)) arm_group_map[[raw_arm]] else raw_arm
 }
 
-# ── Drug-specific window/prior overrides ───────────────────────────────────────
-# Must be resolved AFTER w1/w2/pC_w/pL_w/max_recrud_days are set above, since
-# any per-drug value not explicitly overridden falls back to those globals.
+# ── Drug-specific pC window/prior overrides (pC ONLY) ──────────────────────────
+# Must be resolved AFTER w1/w2/pC_w/max_recrud_days are set above, since any
+# per-drug value not explicitly overridden falls back to those globals.
 # Composes independently with pq_arms: a patient's arm can appear in BOTH
-# al_arms/cq_arms (controls window shape) and pq_arms (controls relapse-prior
-# discount) at once — e.g. ALPQ, CQPQ.
+# al_arms/cq_arms (controls pC window shape) and pq_arms (controls pL's
+# relapse-prior discount) at once — e.g. ALPQ, CQPQ.
+#
+# NOTE: there is deliberately no pL_al/pL_cq or window_days_pL_al/
+# window_days_pL_cq anywhere in this script. pL always uses the single
+# global w1/w2/pL_w schedule, for every arm — see header note above.
 al_arms_flag <- cli$al_arms %||% character(0)
 cq_arms_flag <- cli$cq_arms %||% character(0)
 
 resolve_drug_params <- function(suffix, arms_flag) {
   if (!length(arms_flag)) return(NULL)
-  wd  <- cli[[paste0("window_days_", suffix)]]
+  wdC <- cli[[paste0("window_days_", suffix)]]
   pc  <- cli[[paste0("pC_", suffix)]]
-  pl  <- cli[[paste0("pL_", suffix)]]
   mrd <- cli[[paste0("max_recrud_days_", suffix)]]
   list(
     arms            = arms_flag,
-    w1              = if (!is.null(wd))  as.numeric(wd[1]) else w1,
-    w2              = if (!is.null(wd))  as.numeric(wd[2]) else w2,
-    pC_w            = if (!is.null(pc))  as.numeric(pc)    else pC_w,
-    pL_w            = if (!is.null(pl))  as.numeric(pl)    else pL_w,
-    max_recrud_days = if (!is.null(mrd)) as.numeric(mrd)   else max_recrud_days
+    w1C             = if (!is.null(wdC)) as.numeric(wdC[1]) else w1,
+    w2C             = if (!is.null(wdC)) as.numeric(wdC[2]) else w2,
+    pC_w            = if (!is.null(pc))  as.numeric(pc)     else pC_w,
+    max_recrud_days = if (!is.null(mrd)) as.numeric(mrd)    else max_recrud_days
   )
 }
 
@@ -387,17 +400,15 @@ drug_params <- list(
   cq = resolve_drug_params("cq", cq_arms_flag)
 )
 if (!is.null(drug_params$al))
-  message(sprintf(">> AL-arm overrides: w1=%g w2=%g pC=%s pL=%s max_recrud_days=%g (arms: %s)",
-                  drug_params$al$w1, drug_params$al$w2,
+  message(sprintf(">> AL-arm pC overrides: w1C=%g w2C=%g pC=%s max_recrud_days=%g (arms: %s) | pL: global, unaffected",
+                  drug_params$al$w1C, drug_params$al$w2C,
                   paste(drug_params$al$pC_w, collapse=" "),
-                  paste(drug_params$al$pL_w, collapse=" "),
                   drug_params$al$max_recrud_days,
                   paste(al_arms_flag, collapse=", ")))
 if (!is.null(drug_params$cq))
-  message(sprintf(">> CQ-arm overrides: w1=%g w2=%g pC=%s pL=%s max_recrud_days=%g (arms: %s)",
-                  drug_params$cq$w1, drug_params$cq$w2,
+  message(sprintf(">> CQ-arm pC overrides: w1C=%g w2C=%g pC=%s max_recrud_days=%g (arms: %s) | pL: global, unaffected",
+                  drug_params$cq$w1C, drug_params$cq$w2C,
                   paste(drug_params$cq$pC_w, collapse=" "),
-                  paste(drug_params$cq$pL_w, collapse=" "),
                   drug_params$cq$max_recrud_days,
                   paste(cq_arms_flag, collapse=", ")))
 
@@ -789,20 +800,22 @@ pq_arm_pids <- if (length(pq_arms_flag) > 0) {
 } else {
   character(0)
 }
-message(sprintf(">> PQ arm patients: %d (pq_discount=%.2f applied in windows 2-3)",
+message(sprintf(">> PQ arm patients: %d (pq_discount=%.2f applied to pL in windows 2-3 of its global schedule)",
                 length(pq_arm_pids), pq_discount))
 message(sprintf(">> PQ arms specified: %s",
                 if (length(pq_arms_flag)) paste(pq_arms_flag, collapse=", ") else "none"))
 
-# ── Per-patient drug-group lookup (for al_arms/cq_arms window/prior overrides) ─
+# ── Per-patient drug-group lookup (for al_arms/cq_arms pC window/prior overrides) ─
 # Looks up each patient's treatment_arm from the persistent, full pair_tbl
 # (never reassigned across subset runs, so this remains correct regardless of
 # which subset — full / first_rec_only / mono_only — is currently active).
+# Returns pC-specific parameters ONLY — pL is never looked up per-patient here,
+# since it never varies by drug; callers use the global w1/w2/pL_w directly.
 get_patient_drug_params <- function(pid) {
   arm <- pair_tbl$treatment_arm[match(pid, pair_tbl$id)]
   if (!is.null(drug_params$al) && arm %in% drug_params$al$arms) return(drug_params$al)
   if (!is.null(drug_params$cq) && arm %in% drug_params$cq$arms) return(drug_params$cq)
-  list(w1 = w1, w2 = w2, pC_w = pC_w, pL_w = pL_w, max_recrud_days = max_recrud_days)
+  list(w1C = w1, w2C = w2, pC_w = pC_w, max_recrud_days = max_recrud_days)
 }
 
 has_geno <- !is.na(pair_tbl$.idx_s1) & !is.na(pair_tbl$.idx_s2)
@@ -810,23 +823,29 @@ message(sprintf(">> pairs with genotypes for allele-sharing: %d / %d",
                 sum(has_geno), nrow(pair_tbl)))
 
 # ── Window-based prior (primary) ──────────────────────────────────────────────
-# Replaces log-normal bump with biologically motivated time windows.
+# pC and pL now follow INDEPENDENT window-day schedules:
+#   - pC uses w1C_use/w2C_use (drug-specific if the patient's arm is in
+#     al_arms/cq_arms, otherwise the global w1/w2).
+#   - pL ALWAYS uses the global w1/w2 — there is no w1L_use/w2L_use argument,
+#     deliberately, because pL never varies by drug (see header note).
 # Falls back to legacy armtime log-normal if window_days not specified but
 # armtime is, for backwards compatibility.
-# w1_use/w2_use/pC_w_use/pL_w_use let callers pass drug-specific overrides
-# (see al_arms/cq_arms); they default to the global values if not supplied.
 tt_prior_row <- function(dt, is_pq_arm = FALSE,
-                          w1_use = w1, w2_use = w2,
-                          pC_w_use = pC_w, pL_w_use = pL_w) {
+                          w1C_use = w1, w2C_use = w2,
+                          pC_w_use = pC_w) {
   if (!is.finite(dt) || dt < 0) return(c(C = 1/3, L = 1/3, I = 1/3))
 
-  # Determine window index
-  win <- if (dt <= w1_use) 1L else if (dt <= w2_use) 2L else 3L
+  # pC window — may be drug-specific
+  winC <- if (dt <= w1C_use) 1L else if (dt <= w2C_use) 2L else 3L
+  pC   <- pC_w_use[winC]
 
-  pC  <- pC_w_use[win]
-  pL  <- pL_w_use[win]
-  # PQ arms: discount pL in windows 2 and 3 (hypnozoite reservoir cleared)
-  if (is_pq_arm && win >= 2L) pL <- pL * pq_discount
+  # pL window — ALWAYS the global schedule, identical for every arm
+  winL <- if (dt <= w1) 1L else if (dt <= w2) 2L else 3L
+  pL   <- pL_w[winL]
+  # PQ arms: discount pL in windows 2 and 3 of its (global) schedule
+  # (hypnozoite reservoir cleared)
+  if (is_pq_arm && winL >= 2L) pL <- pL * pq_discount
+
   # lambda_foi-derived reinfection probability — uncapped, grows freely with time
   # Reinfection can occur at any time regardless of arm; influenced only by transmission
   pI  <- 1 - exp(-lambda_foi_w * max(dt, 0))
@@ -909,7 +928,7 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
   idx_ord   <- idx_ord[order(dfsmp$day[idx_ord], dfsmp$smp_id[idx_ord])]
   day_diffs <- diff(dfsmp$day[idx_ord])
   is_pq     <- pid %in% pq_arm_pids
-  dparams   <- get_patient_drug_params(pid)
+  dparams   <- get_patient_drug_params(pid)   # pC-only (w1C, w2C, pC_w, max_recrud_days)
   MOIs_min <- tryCatch(
     Pv3Rs::determine_MOIs(inp$y),
     error = function(e) rep(1L, length(inp$y))
@@ -930,8 +949,8 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
       }
       dt_k  <- if (length(day_diffs) >= k) day_diffs[k] else NA_real_
       pr_k  <- matrix(tt_prior_row(dt_k, is_pq_arm = is_pq,
-                                    w1_use = dparams$w1, w2_use = dparams$w2,
-                                    pC_w_use = dparams$pC_w, pL_w_use = dparams$pL_w),
+                                    w1C_use = dparams$w1C, w2C_use = dparams$w2C,
+                                    pC_w_use = dparams$pC_w),
                       nrow = 1L, ncol = 3L,
                       dimnames = list(NULL, c("C","L","I")))
       res_k <- tryCatch(
@@ -961,8 +980,8 @@ run_pv3rs_one <- function(pid, afreq, eps_fl) {
         tt_prior_row_lognormal(day_diffs[k])
       else
         tt_prior_row(day_diffs[k], is_pq_arm = is_pq,
-                     w1_use = dparams$w1, w2_use = dparams$w2,
-                     pC_w_use = dparams$pC_w, pL_w_use = dparams$pL_w)
+                     w1C_use = dparams$w1C, w2C_use = dparams$w2C,
+                     pC_w_use = dparams$pC_w)
     }
   } else if (is.finite(pC_base) && is.finite(pI_base)) {
     v <- c(C = pC_base, L = 1 - (pC_base + pI_base), I = pI_base)
@@ -1300,21 +1319,21 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
             n_coi_na),
     sprintf("Pv3Rs=%s | max_recrud_days=%.0f | af_model=%s alpha=%.2f eps=%.3g",
             pv3rs_flag, max_recrud_days, af_model, alpha, eps),
-    sprintf("window_days: w1=%g w2=%g | pC: %s | pL: %s | lambda_foi=%.4f | pq_discount=%.2f",
+    sprintf("GLOBAL schedule (pL ALWAYS, pC default): w1=%g w2=%g | pC: %s | pL: %s | lambda_foi=%.4f | pq_discount=%.2f",
             w1, w2, paste(pC_w, collapse=" "), paste(pL_w, collapse=" "),
             lambda_foi_w, pq_discount),
     if (!is.null(drug_params$al))
-      sprintf("AL-arm overrides: w1=%g w2=%g | pC: %s | pL: %s | max_recrud_days=%g (arms: %s)",
-              drug_params$al$w1, drug_params$al$w2,
-              paste(drug_params$al$pC_w, collapse=" "), paste(drug_params$al$pL_w, collapse=" "),
+      sprintf("AL-arm pC-ONLY overrides: w1C=%g w2C=%g | pC: %s | max_recrud_days=%g (arms: %s) | pL unaffected, uses global",
+              drug_params$al$w1C, drug_params$al$w2C,
+              paste(drug_params$al$pC_w, collapse=" "),
               drug_params$al$max_recrud_days, paste(al_arms_flag, collapse=", "))
-    else "AL-arm overrides: none",
+    else "AL-arm pC overrides: none",
     if (!is.null(drug_params$cq))
-      sprintf("CQ-arm overrides: w1=%g w2=%g | pC: %s | pL: %s | max_recrud_days=%g (arms: %s)",
-              drug_params$cq$w1, drug_params$cq$w2,
-              paste(drug_params$cq$pC_w, collapse=" "), paste(drug_params$cq$pL_w, collapse=" "),
+      sprintf("CQ-arm pC-ONLY overrides: w1C=%g w2C=%g | pC: %s | max_recrud_days=%g (arms: %s) | pL unaffected, uses global",
+              drug_params$cq$w1C, drug_params$cq$w2C,
+              paste(drug_params$cq$pC_w, collapse=" "),
               drug_params$cq$max_recrud_days, paste(cq_arms_flag, collapse=", "))
-    else "CQ-arm overrides: none",
+    else "CQ-arm pC overrides: none",
     sprintf("arm_group mapping: %s",
             if (length(arm_group_map)) paste(names(arm_group_map), arm_group_map, sep="->", collapse=", ") else "none"),
     sprintf("exclude_substituted_first: %s (%d substituted-baseline row(s) detected in this subset, %s)",
