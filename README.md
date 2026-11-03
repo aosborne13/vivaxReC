@@ -341,7 +341,7 @@ vivaxrec summarise \
 
 ## Prior system
 
-The pipeline uses a biologically-informed three-window time prior for both recrudescence (pC) and relapse (pL). **pC and pL follow independent window-day schedules — this is deliberate, not an oversight.** Recrudescence plausibility tracks the terminal half-life of the blood-stage partner drug, so pC's window boundaries are legitimately drug-specific. Relapse timing is governed by hypnozoite reactivation biology, which has no mechanistic link to the blood-stage partner drug — **pL therefore always uses the single schedule below, identically for every treatment arm**, whether or not it also receives the PQ discount. There is no drug-specific pL override anywhere in this pipeline.
+The pipeline uses a biologically-informed three-window time prior for both recrudescence (pC) and relapse (pL). **pC and pL follow independent window-day schedules**. Recrudescence plausibility tracks the terminal half-life of the blood-stage partner drug, so pC window boundaries are drug-specific. Relapse timing is governed by hypnozoite reactivation biology, assumed to have no link to the blood-stage partner drug. **pL uses a single schedule**, whether or not it also receives the PQ discount.
 
 **pL window timings:**
 
