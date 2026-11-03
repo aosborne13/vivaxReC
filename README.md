@@ -242,19 +242,23 @@ Repeat for each trial in your dataset.
 |------|---------|-------------|
 | `max_recrud_days` | `45` | Interval threshold for post-hoc C→L/I reassignment |
 | `af_model` | `mix` | Allele frequency model: `d0`, `pair`, or `mix` |
-| `window_days` | `35 120` | Time window boundaries (days) |
-| `pC` | `0.08`, `0.01`, `0.005` | Per-window recrudescence prior |
-| `pL` | `0.25`, `0.70`, `0.40` | Per-window relapse prior (non-PQ arms) |
+| `window_days` | `35 120` | Time window boundaries (days). Used by **pL for every treatment arm, unconditionally**, and by pC as its default schedule for any arm not covered by `al_arms`/`cq_arms` below |
+| `pC` | `0.08`, `0.01`, `0.005` | Per-window recrudescence prior (default schedule; see `al_arms`/`cq_arms` for drug-specific overrides) |
+| `pL` | `0.25`, `0.70`, `0.40` | Per-window relapse prior (non-PQ arms). **Always follows the global `window_days` schedule above — pL has no drug-specific variant anywhere in this pipeline.** |
 | `lambda_foi_w` | `0.002` | Daily reinfection rate (force of infection) |
-| `pq_discount` | `0.19` | Relapse prior multiplier for PQ arms in windows 2–3 |
+| `pq_discount` | `0.19` | Relapse prior multiplier applied to pL in windows 2–3 of its (global) schedule, for PQ arms |
 | `pq_arms` | *(none)* | Treatment arm names to receive PQ discount (e.g. ` "7-day"`, `"14-day"`, `ALPQ`, `CQPQ`) |
+| `al_arms` / `cq_arms` | *(none)* | Treatment arm names to receive AL- or CQ-specific **recrudescence (pC) window/prior overrides only**. Does not affect pL for these arms — see [Prior system](#prior-system) |
+| `window_days_al` / `window_days_cq` | falls back to global `window_days` | pC-only window boundaries for arms listed in `al_arms`/`cq_arms` |
+| `pC_al` / `pC_cq` | falls back to global `pC` | Per-window recrudescence prior override for arms listed in `al_arms`/`cq_arms` |
+| `max_recrud_days_al` / `max_recrud_days_cq` | falls back to global `max_recrud_days` | Recrudescence reassignment threshold override for arms listed in `al_arms`/`cq_arms` |
 | `first_rec_only` | `off` | `on` to additionally re-run Pv3Rs restricted to D0 + first recurrence per patient |
 | `mono_only` | `off` | `on` to additionally re-run Pv3Rs restricted to patients with monoclonal D0 (raw eMOI ≤ threshold) |
-| `mono_emoi_th` | `1.0` | eMOI threshold for monoclonal D0 definition (raw `post_effective_coi_mean`, not rounded) |
+| `mono_emoi_th` | `1.1` | eMOI threshold for monoclonal D0 definition (raw `post_effective_coi_mean`, not rounded; `1.1` rather than `1.0` to account for MOIRE rounding) |
 
 The default prior values are derived from published *P. vivax* radical cure trial data. Users working in different transmission settings should review and adjust these to reflect local epidemiology and treatment efficacy. See the [Prior system](#prior-system) section below.
 
-> **Note on Recrudesence:** Pv3Rs does not include a time-to-event model and may assign recrudesence, p(C), to individuals with a recurrence that is an exact clone (Dcifer = 1; scale 0 to 1.0) of a previous infection, regardless of time point. High allele sharing between an infection episode and a subsequent recurrent infection greater than 45 days after the previous infection is most parsimoniously attributable to a hypnozoite-derived relapse over a recrudescence from a persisting blood-stage clone.
+> **Note on Recrudescence:** Pv3Rs does not include a time-to-event model and may assign recrudescence, p(C), to individuals with a recurrence that is an exact clone (Dcifer = 1; scale 0 to 1.0) of a previous infection, regardless of time point. High allele sharing between an infection episode and a subsequent recurrent infection greater than the applicable recrudescence threshold is most parsimoniously attributable to a hypnozoite-derived relapse over a recrudescence from a persisting blood-stage clone. This threshold is `max_recrud_days` (default 45) for any arm not listed under `al_arms`/`cq_arms`, and `max_recrud_days_al`/`max_recrud_days_cq` for arms that are.
 
 > **Note on subset analyses:** `first_rec_only` and `mono_only` each trigger a completely independent Pv3Rs run on a restricted dataset — they do not just filter the full output. This is essential because Pv3Rs uses all presented episodes as joint context when computing posteriors; subsetting the output after a full run would give *incorrect* results.
 
@@ -320,7 +324,7 @@ Key columns in every classifications file:
 
 ### `sanity_check.txt`
 
-Summary of key parameters and data quality metrics for the classification run.
+Summary of key parameters and data quality metrics for the classification run. For runs using `al_arms`/`cq_arms`, this file reports the pC-specific window/prior overrides actually applied, separately from the global schedule pL used for every arm.
 
 ### `summary_by_trial_site.tsv`
 
@@ -337,14 +341,33 @@ vivaxrec summarise \
 
 ## Prior system
 
-The pipeline uses a biologically-informed three-window time prior. Defaults are derived from published *P. vivax* radical cure trial data and should be reviewed for each new study setting. These can be adjusted by any user for their specific datasets.
+The pipeline uses a biologically-informed three-window time prior for both recrudescence (pC) and relapse (pL). **pC and pL follow independent window-day schedules — this is deliberate, not an oversight.** Recrudescence plausibility tracks the terminal half-life of the blood-stage partner drug, so pC's window boundaries are legitimately drug-specific. Relapse timing is governed by hypnozoite reactivation biology, which has no mechanistic link to the blood-stage partner drug — **pL therefore always uses the single schedule below, identically for every treatment arm**, whether or not it also receives the PQ discount. There is no drug-specific pL override anywhere in this pipeline.
+
+**pL's schedule (always, every arm):**
 
 | Window | Days | Description |
 |--------|------|-------------|
-| 1 | ≤ 35 | Recrudescence possible; short-latency relapse possible |
-| 2 | 36–120 | Recrudescence very unlikely; primary relapse window |
-| 3 | > 120 | Recrudescence implausible; reinfection accumulates |
+| 1 | < 35 | Short-latency relapse possible |
+| 2 | 35–120 | Primary relapse window |
+| 3 | > 120 | Reinfection accumulates |
 
-Window boundaries and prior values are all configurable via CLI flags. If primaquine (PQ) treatment arms are present, the relapse prior in Windows 2 and 3 is discounted by `pq_discount` (default 0.19, reflecting ~5-fold reduction in relapse from published trial data). Adjust this multiplier to match the efficacy observed in your study.
+**pC's default schedule** (used for any arm not listed under `al_arms`/`cq_arms`):
+
+| Window | Days | Description |
+|--------|------|-------------|
+| 1 | ≤ 35 | Recrudescence possible |
+| 2 | 36–120 | Recrudescence very unlikely |
+| 3 | > 120 | Recrudescence implausible |
+
+**pC's drug-specific schedules**, where the trial includes arms with materially different blood-stage drug half-lives — e.g. for AL (terminal half-life ~3–6 days) vs. CQ (20–60 days):
+
+| Drug | Window 1 | Window 2 | Window 3 |
+|------|----------|----------|----------|
+| CQ | ≤ 35 days | 36–120 days | > 120 days |
+| AL | ≤ 14 days | 15–60 days | > 60 days |
+
+Set via `al_arms`/`cq_arms` plus `window_days_al`/`window_days_cq` and `pC_al`/`pC_cq` (see Option flags table above). These defaults are derived from published *P. vivax* radical cure trial data and should be reviewed and adjusted for each new study setting — independently for pC and pL where biologically appropriate, bearing in mind that pL is intentionally never varied by drug.
+
+Window boundaries and prior values are all configurable via CLI flags. If primaquine (PQ) treatment arms are present, the relapse prior in windows 2 and 3 of pL's (global) schedule is discounted by `pq_discount` (default 0.19, reflecting ~5-fold reduction in relapse from published trial data). Adjust this multiplier to match the efficacy observed in your study.
 
 The `lambda_foi_w = 0.002/day` default reinfection rate is conservative; relapse proportions derived under this prior should be treated as lower bounds in high-transmission settings.
