@@ -232,6 +232,36 @@ vivaxrec classify \
   geno       $BASE/mhap_filtered.tsv \
   master_dir $BASE/recurrence-classification \
   out_dir    $BASE/recurrence-classification/$TRIAL/consecutive-pairs
+
+# Example using trial data from OPRA
+INPUT_DIR=patient_level_tables
+GENO=mhap_filtered.tsv
+MASTER_DIR=recurrence-classification
+
+# first recurrences only (consecutive, no missing data)
+vivaxrec classify trial opra pair_mode consecutive \
+  input_dir  $INPUT_DIR \
+  geno       $GENO \
+  master_dir $MASTER_DIR \
+  out_dir    $MASTER_DIR/opra/consecutive-pairs \
+  pq_arms "ALPQ" "CQPQ" \
+  arm_group "ALPQ:PQ" "CQPQ:PQ" \
+  al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \
+  cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \
+  exclude_substituted_first on \
+  first_rec_only on
+
+# all consecutive recurrences
+vivaxrec classify trial opra pair_mode consecutive \
+  input_dir  $INPUT_DIR \
+  geno       $GENO \
+  master_dir $MASTER_DIR \
+  out_dir    $MASTER_DIR/opra/consecutive-pairs \
+  pq_arms "ALPQ" "CQPQ" \
+  arm_group "ALPQ:PQ" "CQPQ:PQ" \
+  al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \
+  cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \
+  exclude_substituted_first on 
 ```
 
 Repeat for each trial in your dataset.
