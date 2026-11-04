@@ -105,12 +105,10 @@ micromamba update -f env/environment.yml
 Rscript env/install_R_packages.R
 ```
 ## Input data
-**vivaxReC** was designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**.
+**vivaxReC** was initally designed to analyse *P. vivax* microhaplotpe genotyping data following protocols and design workflows created by **VivaxGEN**. vivaxReC should work with other forms of multi-allelic sequencing data but accuracy will vary depending on the number of sequencing markers used. **Do not use WGS data**.
 
 - Sequencing assay and panel design methodology - [Microhaplotype Sequencing Manuscript](https://www.nature.com/articles/s41467-025-62357-x) + [Laboratory Protocols](https://www.protocols.io/private/B941F93F1F7D11F0BADE0A58A9FEAC02)
 - Bioinformatic processing pipeline - [VivaxGEN GitHub](https://github.com/vivaxgen/MicroHaps)
-
-*Note - vivaxReC should work with other forms of multi-allelic sequencing data but accuracy will vary depending on the number of sequencing markers used. **Do not use WGS data**.*
 
 The pipeline takes three raw input files — the `trial` column in the metadata file determines how samples are grouped, and any trial name(s) can be used. Multiple trials, or categories, can coexist in the same files.
 
