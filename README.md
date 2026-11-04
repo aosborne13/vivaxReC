@@ -7,7 +7,7 @@ Modeled using genotyping data following protocols and design workflows created b
 
 **vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reinvent existing methods. All primary methodological credit remains with the original tool authors.
 
-## Methods and attribution
+## Methods and acknowledgement of key software contributions
 
 **vivaxReC** integrates outputs from several existing analysis tools. Users of this repository should cite the original methods accordingly:
 
