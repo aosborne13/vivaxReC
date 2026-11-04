@@ -18,7 +18,7 @@ Modeled using genotyping data following protocols and design workflows created b
 Please refer to the original publications and documentation for for full methodological details and citation information.
 
 
-## Pipeline overview - ADDING MORE QC AND DOWNSTREAM ANALYSES
+## Pipeline overview
 
 ```
   metadata.tsv                      ──┐
