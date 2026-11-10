@@ -1,6 +1,4 @@
 # vivaxReC
-
-## What is vivaxReC ?
 **vivaxReC** (**v**ivax **R**e**C**urrence) is a workflow for processing multiallelic data from recurrent *Plasmodium vivax* infections - this will be done by integrating outputs from established genotyping-based recurrence tools (e.g. *Pv3Rs*), allele-sharing, relatedness estimates (e.g. *Dcifer* and *MOIRE*).
 
 Modeled using genotyping data following protocols and design workflows created by **VivaxGEN**: [Pv-rhAmpSeq Laboratory Protocol](https://www.protocols.io/view/p-vivax-microhaplotype-deep-sequencing-assays-x54v92boml3e/v2) and [Manuscript](https://www.nature.com/articles/s41467-025-62357-x).
