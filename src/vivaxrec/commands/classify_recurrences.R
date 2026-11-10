@@ -2,9 +2,6 @@
 # =============================================================================
 # classify_recurrences.R
 #
-# Recurrence classification combining DCiFER (pairwise IBD) and Pv3Rs
-# (probabilistic joint inference). Allele-sharing statistics are computed
-# for all pairs and retained as supplementary descriptive output.
 #
 # ── Input files ───────────────────────────────────────────────────────────────
 # All under analysis directory:
@@ -41,24 +38,22 @@
 #   strict          strict | loose
 #   pv3rs           on | off
 #   af_model        d0 | pair | mix
-#   alpha           numeric  (mix weight, default 0.15)
-#   eps             numeric  (smoothing multiplier, default 0.05)
+#   alpha           numeric  (default 0.15)
+#   eps             numeric  (default 0.05)
 #   maxrec          integer  (Pv3Rs max recurrences per patient, default 6)
-#   max_recrud_days numeric  (post-hoc C->L reassignment threshold, default 45)
+#   max_recrud_days numeric  (C->L reassignment threshold, default 45)
 #
 # ── Independent pC / pL window schedules (primary prior system) ───────────────
-#   Based on P. vivax biology, per Supplementary Table 1.
 #   Defaults derived from published P. vivax radical cure trial data and should
-#   be reviewed and adjusted to reflect the epidemiology of the setting being analysed.
+#   be reviewed or adjusted to reflect the epidemiology of the setting being analysed.
 #
-#   *** pC and pL use INDEPENDENT window-day schedules ***
+#   *** pC and pL use window-day schedules ***
 #   Recrudescence plausibility (pC) uses the blood-stage partner drug's
 #   terminal half-life, so pC's window boundaries are drug-specific
 #   (see al_arms/cq_arms below). 
 #   Relapse timing (pL) is governed by hypnozoite
-#   reactivation biology - no link to the blood-stage
-#   partner drug - pL ALWAYS follows a single schedule
-#   (window_days / pL below), identically for every arm, PQ-discounted or not.
+#   reactivation biology
+#   partner drug - pL follows a single schedule
 #
 #     CQ efficacy example (Getachew et al. 2015): 0.7% early, 8% late treatment failure
 #     PQ efficacy example (Taylor et al. 2019 Lancet): ~5.3x reduction in relapse
@@ -94,13 +89,9 @@
 #
 # ── Drug-specific pC window/prior overrides (pC ONLY — see note above) ────────
 #   These OVERRIDE window_days / pC / max_recrud_days, for the pC (recrudescence)
-#   calculation ONLY, for patients in the named arms, to account for drugs with
-#   materially different half-lives (e.g. AL's few-day terminal half-life vs
+#   calculation to account for drugs with different half-lives (e.g. AL's short terminal half-life vs
 #   CQ's 20-60 day half-life). Any arm not listed under al_arms or cq_arms uses
 #   the global window_days/pC/max_recrud_days values unchanged for pC.
-#   pL is NEVER affected by al_arms/cq_arms — every arm's pL always follows the
-#   single global window_days/pL schedule. This changes Pv3Rs posteriors!
-#   Composes independently with pq_arms (see above).
 #
 #   al_arms              names of arms to receive the AL-specific pC overrides below
 #                        e.g.: al_arms "AL" "ALPQ"
@@ -112,26 +103,11 @@
 #   max_recrud_days_al   recrudescence reassignment threshold override for al_arms
 #   max_recrud_days_cq   recrudescence reassignment threshold override for cq_arms
 #
-# ── Reporting-only arm grouping ─────────────────────────────────────────────────
-#   Purely additive — does NOT affect Pv3Rs computation, allele frequencies, r_bg,
-#   or any classification. Only relabels treatment_arm for an additional
-#   summary_by_arm_group*.tsv output, alongside the existing per-arm summary.
-#
-#   arm_group       "raw_arm:group_label" pairs, space-separated
-#                   e.g. OPRA: arm_group "ALPQ:PQ" "CQPQ:PQ"   (AL, CQ stay separate)
-#                   e.g. IMPROV: arm_group "7-day:PQ" "14-day:PQ"   (Control stays separate)
-#                   Arms not listed keep their own name as their group label.
-#
 # ── Substituted-baseline handling (reporting-level exclusion) ──────────────────
 #   OPTIONAL SETTING - DO NOT USE BY DEFAULT - Some patients are missing a true Day 0 sample but have a genotyped first
 #   recurrence (R1) and a consecutive second recurrence (R2); upstream
 #   processing substitutes R1 as a stand-in "baseline" so the R1->R2 interval can
-#   still be analysed DEPENING ON THE SITUATION. This is treatment-equivalent in trials where every
-#   recurrence receives the same regimen (e.g. where PQ is given at every
-#   recurrence), but NOT treatment-equivalent where only the true enrolment
-#   treatment is directly observed and later doses are unsupervised -
-#   in that setting we cannot know whether the substituted "baseline" visit itself
-#   received supervised treatment.
+#   still be analysed.
 #
 #   exclude_substituted_first   on | off  (default: off)
 #     When on: the first interval for any patient with a substituted (non-true-D0)
@@ -139,11 +115,10 @@
 #     summary_by_arm.tsv). The substituted episode's genotype is NOT removed from
 #     Pv3Rs's joint model — later intervals for that same patient (R2->R3 etc.)
 #     are retained and still benefit from the full episode context.
-#     Detection: baseline mode requires a d0_time_point column populated from an
+#     Detection: baseline mode requires a d0_time_point column from an
 #     upstream baseline_time_point field (see build_patient_level_tables.py); a
 #     patient is flagged substituted if that value is not "D0". Consecutive mode
-#     requires no new upstream column — it uses the existing from_time_point on
-#     step_no==1 rows, on the same "not D0" logic.
+#     uses the existing from_time_point on step_no==1 rows.
 #
 # ── Pv3Rs stepwise fallback ───────────────────────────────────────────────────
 #   When sum(MOIs) > 8 for a patient, Pv3Rs runs each consecutive pair
@@ -154,14 +129,6 @@
 #   BASE=/path/to/your/analysis/directory
 #   SCRIPTS=/path/to/vivaxReC/src/vivaxrec/commands
 #   TRIAL=mytrial   # must match the trial column in patient_infection_sequence.tsv
-#
-#   # Baseline pairs
-#   Rscript $SCRIPTS/classify_recurrences.R \
-#     trial $TRIAL pair_mode baseline max_recrud_days 45 \
-#     input_dir  $BASE/input-files/patient_level_tables \
-#     geno       $BASE/input-files/standardized_inputs/mhap_filtered.tsv \
-#     master_dir $BASE/output-analysis/recurrence-classification \
-#     out_dir    $BASE/output-analysis/recurrence-classification/$TRIAL/baseline-to-recurrence
 #
 #   # Consecutive pairs
 #   Rscript $SCRIPTS/classify_recurrences.R \
@@ -315,18 +282,6 @@ if (use_armtime) {
 }
 
 # ── Global window/prior parameters ────────────────────────────────────────────
-# Defaults using P. vivax biology and published Ethiopian trial data.
-# Users should review and adjust these values to reflect their own study setting.
-#
-# w1/w2 and pL_w below are the ONE AND ONLY schedule pL ever uses, for every
-# arm, PQ or not — there is no per-drug pL override anywhere in this script.
-# w1/w2 and pC_w are pC's DEFAULT schedule, used for any arm not listed under
-# al_arms/cq_arms; arms that ARE listed use their window_days_*/pC_*
-# override instead (see resolve_drug_params() below).
-#
-# pq_discount: multiplier on pL for PQ arms in windows 2 & 3 of pL's (global)
-# schedule — never applied against a drug-specific window, since pL has none.
-#   default 0.19 = 1/5.3 from published ~5-fold reduction in relapse with PQ
 use_window_prior <- !is.null(cli$window_days)
 if (use_window_prior) {
   w1           <- as.numeric(cli$window_days[1])  # default 35
@@ -349,8 +304,7 @@ if (use_window_prior) {
 pq_arms_flag     <- cli$pq_arms %||% character(0)
 
 # ── Reporting-only arm grouping ────────────────────────────────────────────────
-# Parsed as "raw_arm:group_label" tokens. Purely additive — never used in any
-# Pv3Rs computation, only to label output rows for an additional summary table.
+# Parsed as "raw_arm:group_label" tokens - to label output rows for an additional summary table.
 arm_group_flag <- cli$arm_group %||% character(0)
 arm_group_map  <- character(0)
 if (length(arm_group_flag) > 0) {
@@ -369,15 +323,7 @@ map_arm_group <- function(raw_arm) {
 }
 
 # ── Drug-specific pC window/prior overrides (pC ONLY) ──────────────────────────
-# Must be resolved AFTER w1/w2/pC_w/max_recrud_days are set above, since any
-# per-drug value not explicitly overridden falls back to those globals.
-# Composes independently with pq_arms: a patient's arm can appear in BOTH
-# al_arms/cq_arms (controls pC window shape) and pq_arms (controls pL's
-# relapse-prior discount) at once — e.g. ALPQ, CQPQ.
-#
-# NOTE: there is deliberately no pL_al/pL_cq or window_days_pL_al/
-# window_days_pL_cq anywhere in this script. pL always uses the single
-# global w1/w2/pL_w schedule, for every arm — see header note above.
+# Must be resolved AFTER w1/w2/pC_w/max_recrud_days are set above.
 al_arms_flag <- cli$al_arms %||% character(0)
 cq_arms_flag <- cli$cq_arms %||% character(0)
 
@@ -467,7 +413,6 @@ message(">> loading patient_infection_sequence")
 pis_all <- read_tsv(fp_pis, show_col_types = FALSE)
 
 # eMOI lookup: sample_id -> MOIRE post_effective_coi_mean
-# Single source of truth for COI across the whole pipeline
 emoi_lookup <- pis_all %>%
   filter(!is.na(post_effective_coi_mean)) %>%
   transmute(sample_id, emoi = post_effective_coi_mean) %>%
@@ -499,8 +444,7 @@ if (nrow(pairs) == 0)
 
 # For baseline mode, check whether the upstream file carries the baseline-side
 # time_point/day columns needed for substituted-baseline detection. If absent,
-# exclude_substituted_first=on will be a no-op for this pair_mode with a warning
-# (rather than a hard failure), since consecutive mode does not depend on this.
+# exclude_substituted_first=on will be a no-op for this pair_mode with a warning, since consecutive mode does not depend on this.
 if (pair_mode == "baseline") {
   has_bl_tp  <- "baseline_time_point" %in% names(pairs)
   if (exclude_substituted_first == "on" && !has_bl_tp) {
@@ -529,9 +473,8 @@ n_after <- nrow(geno)
 message(sprintf(">> allele rows: kept %d of %d (dropped %d missing/blank/dup)",
                 n_after, n_before, n_before - n_after))
 
-# ── Load master_samples (produced by prep_aster_inputs.py) ───────────────────
-# patient_id here is external_id from patient_infection_sequence — the correct
-# patient grouping key (not a string split of sample_id, which gives a different format).
+# ── Load master_samples ───────────────────
+# patient_id here is external_id from patient_infection_sequence
 samples <- read_tsv(master_fp, show_col_types = FALSE)
 
 meta <- samples %>%
@@ -548,7 +491,7 @@ meta <- samples %>%
 # When site_filter is supplied, restrict meta (and therefore dfsmp, dsmp, coi,
 # and all allele frequency estimates) to samples from the specified site(s) only.
 # This ensures allele frequencies are estimated from site-specific D0 samples
-# and Pv3Rs only sees episodes from that site — consistent with the mono_only logic.
+# and Pv3Rs only sees episodes from that site.
 if (length(site_filter) > 0) {
   n_before_site <- nrow(meta)
   meta <- meta %>% filter(site %in% site_filter)
@@ -602,8 +545,6 @@ dfsmp$pdet <- 0.9
 
 # ── Allele frequency computation (reusable for subset runs) ──────────────────
 # Encapsulated so the mono_only run can recompute from monoclonal D0 only.
-# panel_all is built from ALL samples (ensures every observed allele has an
-# entry with at least eps_floor, keeping frequency tables pairwise-stable).
 panel_all <- list()
 for (s in dsmp) for (L in names(s))
   panel_all[[L]] <- union(panel_all[[L]], unique(names(s[[L]])))
@@ -614,7 +555,7 @@ calc_afreq <- function(sub_dsmp, sub_coi, sub_is_d0) {
   minfr_sub  <- 1 / sum(sub_coi[sub_is_d0])
   eps_fl_sub <- max(minfr_sub * eps, 1e-12)
   af <- lapply(af, function(v) { v[v == 0] <- minfr_sub; v / sum(v) })
-  # Augment with full panel so every allele in the data has a frequency entry
+
   af_aug <- lapply(names(panel_all), function(L) {
     alleles <- panel_all[[L]]
     v <- af[[L]]
@@ -655,7 +596,7 @@ if (mono_only == "on") {
   message(sprintf(">> allele frequencies estimated from %d D0 samples (all)", n_d0))
 }
 
-# afreq_base and eps_floor are the frequencies used by the current run's
+# afreq_base and eps_floor are the frequencies used by the current run
 # Pv3Rs and dcifer calls (make_afreq_pair, r_bg, build_pv3rs_inputs)
 af_run     <- if (mono_only == "on") af_mono else af_full
 afreq_base <- af_run$afreq
@@ -736,8 +677,8 @@ if (pair_mode == "baseline") {
     mutate(recurrence_no = dplyr::row_number()) %>%
     ungroup() %>%
     mutate(
-      # Only meaningful (and only ever TRUE) on the first interval per patient;
-      # later recurrence_no values are never substituted-baseline candidates.
+      # Only on the first interval per patient;
+      # later recurrence_no values never substituted-baseline candidates.
       is_substituted_baseline = recurrence_no == 1L &
                                 !is.na(d0_time_point) &
                                 d0_time_point != "D0"
@@ -771,9 +712,7 @@ if (pair_mode == "baseline") {
     ungroup() %>%
     mutate(
       # A "substituted baseline" consecutive pair is the first step for a patient
-      # whose FROM sample is not itself a true D0 (i.e. their real D0 failed
-      # genotyping and an upstream process substituted their first recurrence
-      # as the effective baseline). Only ever TRUE for step_no == 1.
+      # whose FROM sample is not itself a true D0. Only ever TRUE for step_no == 1.
       is_substituted_baseline = step_no == 1L &
                                 !is.na(from_time_point) &
                                 from_time_point != "D0"
@@ -805,11 +744,9 @@ message(sprintf(">> PQ arm patients: %d (pq_discount=%.2f applied to pL in windo
 message(sprintf(">> PQ arms specified: %s",
                 if (length(pq_arms_flag)) paste(pq_arms_flag, collapse=", ") else "none"))
 
-# ── Per-patient drug-group lookup (for al_arms/cq_arms pC window/prior overrides) ─
+# ── Per-patient drug-group lookup (for al_arms/cq_arms pC window/prior overrides).
 # Looks up each patient's treatment_arm from the persistent, full pair_tbl
-# (never reassigned across subset runs, so this remains correct regardless of
-# which subset — full / first_rec_only / mono_only — is currently active).
-# Returns pC-specific parameters ONLY — pL is never looked up per-patient here,
+# Returns pC-specific parameters ONLY. pL is never looked up per-patient here,
 # since it never varies by drug; callers use the global w1/w2/pL_w directly.
 get_patient_drug_params <- function(pid) {
   arm <- pair_tbl$treatment_arm[match(pid, pair_tbl$id)]
@@ -822,7 +759,7 @@ has_geno <- !is.na(pair_tbl$.idx_s1) & !is.na(pair_tbl$.idx_s2)
 message(sprintf(">> pairs with genotypes for allele-sharing: %d / %d",
                 sum(has_geno), nrow(pair_tbl)))
 
-# ── Window-based prior (primary) ──────────────────────────────────────────────
+# ── Window-based Pv3Rs ──────────────────────────────────────────────
 # pC and pL now follow INDEPENDENT window-day schedules:
 #   - pC uses w1C_use/w2C_use (drug-specific if the patient's arm is in
 #     al_arms/cq_arms, otherwise the global w1/w2).
@@ -855,7 +792,6 @@ tt_prior_row <- function(dt, is_pq_arm = FALSE,
   vec / sum(vec)
 }
 
-# ── Legacy log-normal prior (kept for --armtime back-compat) ──────────────────
 tt_prior_row_lognormal <- function(dt) {
   if (!use_armtime || !is.finite(dt) || dt < 0) return(c(C = 1/3, L = 1/3, I = 1/3))
   pI   <- 1 - exp(-lambda_foi * max(dt, 0))
@@ -1219,7 +1155,7 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
 
   # ── Assemble base output ────────────────────────────────────────────────────
   # IMPORTANT: sub_dfsmp/sub_dsmp/sub_coi (passed to Pv3Rs below) are NOT
-  # filtered for substituted baselines — Pv3Rs still sees the full episode
+  # filtered for substituted baselines. Pv3Rs still sees the full episode
   # sequence, including any substituted first episode, as joint context. Only
   # sub_out (the reporting table written to disk) has substituted-baseline rows
   # suppressed, and only when exclude_substituted_first=on.
@@ -1228,7 +1164,7 @@ run_and_write <- function(sub_dfsmp, sub_dsmp, sub_coi,
     sub_shr
   )
 
-  # ── Suppress substituted-baseline rows from reporting (does not affect Pv3Rs) ──
+  # Suppress substituted-baseline rows from reporting
   if (exclude_substituted_first == "on" && "is_substituted_baseline" %in% names(sub_out)) {
     n_excl <- sum(sub_out$is_substituted_baseline, na.rm = TRUE)
     if (n_excl > 0) {
