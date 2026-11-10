@@ -31,11 +31,7 @@ purely positional and does not detect gaps.
 EXCEPTION: if a patient's non-D0 samples never use the DRPn scheme at all
 (e.g. "M3"/"M7"-style visit labels instead), there is no DRP-numbering
 information available to detect a gap with. In that case the patient's
-existing day-based positional order (infection_index) is trusted directly
-rather than treating every such row as an unparseable gap. This fallback is
-safe only because no patient in this dataset has been found to MIX DRPn and
-non-DRPn labels (verified at time of writing) -- if that ever changes, mixed
-patients will need explicit manual review rather than silent fallback.
+existing day-based positional order (infection_index) can be chosen to be trusted directly.
 
 Rules:
   - If a patient has no true D0 sample at all, they are excluded from every
