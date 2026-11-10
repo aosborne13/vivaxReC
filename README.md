@@ -3,7 +3,7 @@
 
 Modeled using genotyping data following protocols and design workflows created by **VivaxGEN**: [Pv-rhAmpSeq Laboratory Protocol](https://www.protocols.io/view/p-vivax-microhaplotype-deep-sequencing-assays-x54v92boml3e/v2) and [Manuscript](https://www.nature.com/articles/s41467-025-62357-x).
 
-**vivaxReC** does not introduce a new recurrence classification algorithm, nor does it reinvent existing methods. All primary methodological credit remains with the original tool authors.
+All primary methodological credit remains with the original tool authors.
 
 ## Methods and acknowledgement of key intellectual contributions
 
