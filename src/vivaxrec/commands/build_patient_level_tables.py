@@ -149,7 +149,7 @@ meta["infection_index"] = meta.groupby("external_id").cumcount()
 
 # ── True recurrence number, parsed from time_point (NOT positional) ──────────
 # "D0" -> 0, "DRP1" -> 1, "DRP2" -> 2, etc. Anything else (e.g. "M3", "M7")
-# -> NaN, which is a genuine gap UNLESS the patient's whole record uses a
+# -> NaN, which is a gap UNLESS the patient's whole record uses a
 # non-DRPn scheme, in which case valid_chain_cutoff() below falls back to
 # infection_index instead.
 _DRP_RE = re.compile(r'^DRP(\d+)$')
