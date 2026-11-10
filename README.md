@@ -229,12 +229,12 @@ vivaxrec classify \
   master_dir $BASE/recurrence-classification \
   out_dir    $BASE/recurrence-classification/$TRIAL/consecutive-pairs
 
-# Example using trial data from OPRA
+# Example using trial data from OPRA or IMPROV
 INPUT_DIR=patient_level_tables
 GENO=mhap_filtered.tsv
 MASTER_DIR=recurrence-classification
 
-# first recurrences only (consecutive, no missing data)
+# first recurrences only (consecutive, no missing data) - OPRA
 vivaxrec classify trial opra pair_mode consecutive \
   input_dir  $INPUT_DIR \
   geno       $GENO \
@@ -247,7 +247,7 @@ vivaxrec classify trial opra pair_mode consecutive \
   exclude_substituted_first on \
   first_rec_only on
 
-# all consecutive recurrences
+# all consecutive recurrences - OPRA
 vivaxrec classify trial opra pair_mode consecutive \
   input_dir  $INPUT_DIR \
   geno       $GENO \
@@ -257,7 +257,18 @@ vivaxrec classify trial opra pair_mode consecutive \
   arm_group "ALPQ:PQ" "CQPQ:PQ" \
   al_arms "AL" "ALPQ" window_days_al 14 60 max_recrud_days_al 14 \
   cq_arms "CQ" "CQPQ" window_days_cq 35 120 max_recrud_days_cq 45 \
-  exclude_substituted_first on 
+  exclude_substituted_first on
+
+# Site-specific filter on - IMPROV (Arba Minch samples only)
+vivaxrec classify trial improv pair_mode consecutive \
+  input_dir  $INPUT_DIR \
+  geno       $GENO \
+  master_dir $MASTER_DIR \
+  out_dir    $MASTER_DIR/improv/arba-minch/consecutive-pairs-v2 \
+  site "Arba_Minch" \
+  pq_arms "7-day" "14-day" \
+  arm_group "7-day:PQ" "14-day:PQ"
+ 
 ```
 
 Repeat for each trial in your dataset.
