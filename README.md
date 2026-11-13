@@ -15,6 +15,7 @@ All primary methodological credit remains with the original tool authors.
 
 Please refer to the original publications and documentation for for full methodological details and citation information.
 
+Example of pipeline usage on Ethiopian data from IMPROV and OPRA radical cure clinical trials - [Pre-Print](https://www.biorxiv.org/content/10.64898/2026.11.12.765293v1).
 
 ## Pipeline overview
 
